@@ -88,67 +88,91 @@ def check_collision(obb1, obb2):
     distance = obb1.position.distance_to(obb2.position)
     return distance < max(obb1.size.length(), obb2.size.length())
 
+def resize(width, height):
+    print(f"resize to {width} * {height}")
+    if height == 0:
+        height = 1
+    glViewport(0, 0, width, height)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    gluPerspective(45, (width / height), 0.1, 50.0)
+    glMatrixMode(GL_MODELVIEW)
+    # Add following two expression to ensure display well
+    glLoadIdentity()
+    glTranslatef(0.0, 0.0, -5)
+
+def event_handler(scale, rotation):
+    global dragging
+    global last_pos
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            return
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                dragging = True
+                last_pos = pygame.mouse.get_pos()
+            elif event.button == 4:  # Scroll up
+                scale[0] *= 1.1
+            elif event.button == 5:  # Scroll down
+                scale[0] /= 1.1
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:  # Left mouse button
+                dragging = False
+        elif event.type == pygame.MOUSEMOTION:
+            if dragging:
+                new_pos = pygame.mouse.get_pos()
+                dx = new_pos[0] - last_pos[0]
+                dy = new_pos[1] - last_pos[1]
+                rotation[0] += dy * 0.5
+                rotation[1] += dx * 0.5
+                last_pos = new_pos
+        elif event.type == VIDEORESIZE:
+            resize(event.w, event.h)
+
+def recv_obb(socket, obbs):
+    try:
+        message = socket.recv(flags=zmq.NOBLOCK)
+        data = json.loads(message)
+        obbs[:] = [OBB(obb['type'], obb['position'], obb['rotation'], obb['size']) for obb in data]
+    except zmq.Again:
+        pass  # No message available
+
+dragging = False
+last_pos = None
+
 def main():
     pygame.init()
     display = (800, 600)
-    pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
+    pygame.display.set_mode(display, DOUBLEBUF | OPENGL | RESIZABLE)
     gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
     glTranslatef(0.0, 0.0, -5)
 
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
-    socket.connect("tcp://192.168.71.38:5555")
+    #  socket.connect("tcp://192.168.71.38:5555")
+    socket.connect("tcp://localhost:5555")
     socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     clock = pygame.time.Clock()
 
     rotation = [0, 0]
     translation = [0, 0, 0]
-    scale = 1.0
-
-    dragging = False
-    last_pos = None
+    # Use list to make it mutable
+    scale = [1.0]
 
     obbs = []
 
     while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                return
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left mouse button
-                    dragging = True
-                    last_pos = pygame.mouse.get_pos()
-                elif event.button == 4:  # Scroll up
-                    scale *= 1.1
-                elif event.button == 5:  # Scroll down
-                    scale /= 1.1
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left mouse button
-                    dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if dragging:
-                    new_pos = pygame.mouse.get_pos()
-                    dx = new_pos[0] - last_pos[0]
-                    dy = new_pos[1] - last_pos[1]
-                    rotation[0] += dy * 0.5
-                    rotation[1] += dx * 0.5
-                    last_pos = new_pos
-
-        try:
-            message = socket.recv(flags=zmq.NOBLOCK)
-            data = json.loads(message)
-            obbs = [OBB(obb['type'], obb['position'], obb['rotation'], obb['size']) for obb in data]
-        except zmq.Again:
-            pass  # No message available
+        event_handler(scale, rotation)
+        recv_obb(socket, obbs)
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glPushMatrix()
         glTranslatef(*translation)
         glRotatef(rotation[0], 1, 0, 0)
         glRotatef(rotation[1], 0, 1, 0)
-        glScalef(scale, scale, scale)
+        glScalef(scale[0], scale[0], scale[0])
 
         draw_coordinate_system()
 
@@ -161,9 +185,7 @@ def main():
                     else:
                         obb.color = (0, 1, 0, 1)  # Green
 
-        #  print(len(obbs))
         for obb in obbs:
-            #  print(obb.type)
             draw_obb(obb)
 
         glPopMatrix()
