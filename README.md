@@ -1,8 +1,12 @@
 # Installation
 ## Recv
 ```bash
-$ pip install pyzmq pygame PyOpenGL
+$ pip install pyzmq pygame PyOpenGL zlib bson pympler
 ```
+
+zlib is used to compress data
+bson is used to convert data to binary
+pympler used to calculate memory usage
 
 ## Sender
 ```bash

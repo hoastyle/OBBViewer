@@ -8,7 +8,13 @@ import json
 import math
 
 import numpy as np
+import time
+import zlib
+import bson
+import sys
 
+import argparse
+#  from pympler import asizeof
 
 class OBB:
     def __init__(self, type, position, rotation, size, collision):
@@ -170,6 +176,9 @@ def recv_obb(socket, obbs):
     try:
         message = socket.recv(flags=zmq.NOBLOCK)
         data = json.loads(message)
+        if debug_info:
+            print(f"Normal json message size1: {sys.getsizeof(message)/1024:.2f}KB")
+            #  print(f"Normal json message size2: {asizeof.asizeof(message)/1024:.2f}KB")
         obbs[:] = [
             OBB(
                 obb["type"],
@@ -184,11 +193,76 @@ def recv_obb(socket, obbs):
         pass  # No message available
 
 
+def recv_compressed_obb(socket, obbs):
+    try:
+        ori_data = socket.recv(flags=zmq.NOBLOCK)
+        original_size = int.from_bytes(ori_data[:4], byteorder="big")
+        decompressed_bson = zlib.decompress(ori_data)
+        data = bson.loads(decompressed_bson)
+        json_data = data["data"]
+
+        if debug_info:
+            print(f"Obstacle compressed message size: {sys.getsizeof(ori_data)/1024:.2f}KB")
+            #  print(f"Compressed json message size: {asizeof.asizeof(ori_data)/1024:.2f}KB")
+        obbs[:] = [
+            OBB(
+                obb["type"],
+                obb["position"],
+                quaternion_to_matrix(obb["rotation"]),
+                obb["size"],
+                obb["collision_status"],
+            )
+            for obb in json_data
+        ]
+    except zmq.Again:
+        pass  # No message available
+
+def validate_ip_port(value):
+    try:
+        ip, port = value.split(':')
+        port = int(port)
+        if port < 1 or port > 65535:
+            raise ValueError
+    except ValueError:
+        raise argparse.ArgumentTypeError("Invalid IP:PORT format. Should be something like 192.168.1.1:8080")
+    return value
+
 dragging = False
 last_pos = None
+debug_info = False
 
 
 def main():
+    # 创建 ArgumentParser 对象
+    parser = argparse.ArgumentParser(description='A program that receives data in normal or compressed mode.')
+
+    # 添加是否显示调试信息的参数
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='Enable debug mode to show debug information')
+
+    # 添加接收数据模式的参数
+    parser.add_argument('-m', '--mode', choices=['n', 'c'],
+                        default='normal', help='Data receiving mode: (n)normal or (c)compressed')
+
+    # 添加 IP 和端口号参数
+    parser.add_argument('-a', '--address', type=validate_ip_port, required=True,
+                        help='IP address and port number in format IP:PORT')
+
+    # 解析命令行参数
+    args = parser.parse_args()
+
+    # 使用参数
+    if args.debug:
+        print("Debug mode is enabled.")
+        global debug_info
+        debug_info = True
+
+    print(f"Data receiving mode: {args.mode}")
+
+    ip, port = args.address.split(':')
+    print(f"IP address: {ip}")
+    print(f"Port: {port}")
+
     pygame.init()
     display = (800, 600)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL | RESIZABLE)
@@ -197,8 +271,7 @@ def main():
 
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
-    #  socket.connect("tcp://192.168.71.38:5555")
-    socket.connect("tcp://localhost:5555")
+    socket.connect(f"tcp://{ip}:{port}")
     socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     clock = pygame.time.Clock()
@@ -210,34 +283,40 @@ def main():
 
     obbs = []
 
-    while True:
-        event_handler(scale, rotation)
-        recv_obb(socket, obbs)
+    try:
+        while True:
+            event_handler(scale, rotation)
+            if args.mode == 'c':
+                recv_compressed_obb(socket, obbs)
+            else:
+                recv_obb(socket, obbs)
 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glPushMatrix()
-        glTranslatef(*translation)
-        glRotatef(rotation[0], 1, 0, 0)
-        glRotatef(rotation[1], 0, 1, 0)
-        glScalef(scale[0], scale[0], scale[0])
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            glPushMatrix()
+            glTranslatef(*translation)
+            glRotatef(rotation[0], 1, 0, 0)
+            glRotatef(rotation[1], 0, 1, 0)
+            glScalef(scale[0], scale[0], scale[0])
 
-        draw_coordinate_system()
+            draw_coordinate_system()
 
-        for obb in obbs:
-            if obb.type == "spreader" or obb.type == "sprCntr":
-                obb.color = (1, 1, 1, 1)
-            elif obb.type == "obs":
+            for obb in obbs:
                 if obb.collision == 1:
                     obb.color = (1, 1, 0, 1)  # Red
                 elif obb.collision == 2:
                     obb.color = (1, 0, 0, 1)  # Red
                 else:
                     obb.color = (1, 1, 1, 1)
-            draw_obb(obb)
+                draw_obb(obb)
 
-        glPopMatrix()
-        pygame.display.flip()
-        clock.tick(60)
+            glPopMatrix()
+            pygame.display.flip()
+            clock.tick(60)
+    except KeyboardInterrupt:
+        print("程序被手动终止")
+    finally:
+        pygame.quit()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
