@@ -1,7 +1,7 @@
 # Installation
 ## Recv
 ```bash
-$ pip install pyzmq pygame PyOpenGL zlib bson pympler
+$ pip install pyzmq pygame PyOpenGL zlib bson
 ```
 
 zlib is used to compress data

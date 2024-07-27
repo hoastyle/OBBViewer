@@ -14,7 +14,7 @@ import bson
 import sys
 
 import argparse
-#  from pympler import asizeof
+
 
 class OBB:
     def __init__(self, type, position, rotation, size, collision):
@@ -178,7 +178,6 @@ def recv_obb(socket, obbs):
         data = json.loads(message)
         if debug_info:
             print(f"Normal json message size1: {sys.getsizeof(message)/1024:.2f}KB")
-            #  print(f"Normal json message size2: {asizeof.asizeof(message)/1024:.2f}KB")
         obbs[:] = [
             OBB(
                 obb["type"],
@@ -193,6 +192,40 @@ def recv_obb(socket, obbs):
         pass  # No message available
 
 
+def recv_compressed_data(socket, obbs, points):
+    try:
+        ori_data = socket.recv(flags=zmq.NOBLOCK)
+        original_size = int.from_bytes(ori_data[:4], byteorder="big")
+        decompressed_bson = zlib.decompress(ori_data)
+        data = bson.loads(decompressed_bson)
+        json_data = data["data"]
+        if "points" in data:
+            json_points = data["points"]
+            w_points = True
+        else:
+            w_points = False
+
+        if debug_info:
+            print(
+                f"Obstacle compressed message size: {sys.getsizeof(ori_data)/1024:.2f}KB"
+            )
+        obbs[:] = [
+            OBB(
+                obb["type"],
+                obb["position"],
+                quaternion_to_matrix(obb["rotation"]),
+                obb["size"],
+                obb["collision_status"],
+            )
+            for obb in json_data
+        ]
+        if w_points == True:
+            points.resize((len(json_points[0]) // 3, 3), refcheck=False)
+            points[:] = np.array(json_points, dtype=np.float32).reshape(-1, 3)
+    except zmq.Again:
+        pass  # No message available
+
+
 def recv_compressed_obb(socket, obbs):
     try:
         ori_data = socket.recv(flags=zmq.NOBLOCK)
@@ -202,8 +235,9 @@ def recv_compressed_obb(socket, obbs):
         json_data = data["data"]
 
         if debug_info:
-            print(f"Obstacle compressed message size: {sys.getsizeof(ori_data)/1024:.2f}KB")
-            #  print(f"Compressed json message size: {asizeof.asizeof(ori_data)/1024:.2f}KB")
+            print(
+                f"Obstacle compressed message size: {sys.getsizeof(ori_data)/1024:.2f}KB"
+            )
         obbs[:] = [
             OBB(
                 obb["type"],
@@ -217,15 +251,26 @@ def recv_compressed_obb(socket, obbs):
     except zmq.Again:
         pass  # No message available
 
+
 def validate_ip_port(value):
     try:
-        ip, port = value.split(':')
+        ip, port = value.split(":")
         port = int(port)
         if port < 1 or port > 65535:
             raise ValueError
     except ValueError:
-        raise argparse.ArgumentTypeError("Invalid IP:PORT format. Should be something like 192.168.1.1:8080")
+        raise argparse.ArgumentTypeError(
+            "Invalid IP:PORT format. Should be something like 192.168.1.1:8080"
+        )
     return value
+
+
+def draw_points(points):
+    glBegin(GL_POINTS)
+    for point in points:
+        glVertex3fv(point)
+    glEnd()
+
 
 dragging = False
 last_pos = None
@@ -234,19 +279,35 @@ debug_info = False
 
 def main():
     # 创建 ArgumentParser 对象
-    parser = argparse.ArgumentParser(description='A program that receives data in normal or compressed mode.')
+    parser = argparse.ArgumentParser(
+        description="A program that receives data in normal or compressed mode."
+    )
 
     # 添加是否显示调试信息的参数
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help='Enable debug mode to show debug information')
+    parser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        help="Enable debug mode to show debug information",
+    )
 
     # 添加接收数据模式的参数
-    parser.add_argument('-m', '--mode', choices=['n', 'c'],
-                        default='normal', help='Data receiving mode: (n)normal or (c)compressed')
+    parser.add_argument(
+        "-m",
+        "--mode",
+        choices=["n", "c"],
+        default="normal",
+        help="Data receiving mode: (n)normal or (c)compressed",
+    )
 
     # 添加 IP 和端口号参数
-    parser.add_argument('-a', '--address', type=validate_ip_port, required=True,
-                        help='IP address and port number in format IP:PORT')
+    parser.add_argument(
+        "-a",
+        "--address",
+        type=validate_ip_port,
+        required=True,
+        help="IP address and port number in format IP:PORT",
+    )
 
     # 解析命令行参数
     args = parser.parse_args()
@@ -259,7 +320,7 @@ def main():
 
     print(f"Data receiving mode: {args.mode}")
 
-    ip, port = args.address.split(':')
+    ip, port = args.address.split(":")
     print(f"IP address: {ip}")
     print(f"Port: {port}")
 
@@ -283,11 +344,14 @@ def main():
 
     obbs = []
 
+    points = np.empty((0, 3), dtype=np.float32)
+
     try:
         while True:
             event_handler(scale, rotation)
-            if args.mode == 'c':
-                recv_compressed_obb(socket, obbs)
+            if args.mode == "c":
+                recv_compressed_data(socket, obbs, points)
+                #  recv_compressed_obb(socket, obbs)
             else:
                 recv_obb(socket, obbs)
 
@@ -308,6 +372,8 @@ def main():
                 else:
                     obb.color = (1, 1, 1, 1)
                 draw_obb(obb)
+
+            draw_points(points)
 
             glPopMatrix()
             pygame.display.flip()
