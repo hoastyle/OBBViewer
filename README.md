@@ -10,7 +10,7 @@ pympler used to calculate memory usage
 
 ## Sender
 ```bash
-$ sudo apt-get install libzmq3-dev nlohmann-json3-dev
+$ sudo apt-get install libzmq3-dev nlohmann-json3-dev libtbb-dev
 $ g++ -std=c++11 sender.cpp -o sender -lzmq
 $ cd thirdparty
 ```
@@ -24,4 +24,4 @@ $ cd build;
 $ cmake ../;
 $ make;
 $ sudo make install
-```
+``
