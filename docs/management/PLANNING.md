@@ -1,0 +1,341 @@
+# OBBDemo 项目规划
+
+**最后更新**: 2025-12-20
+
+## 项目概述
+
+### 项目目标
+
+OBBDemo 是一个基于 ZeroMQ 的实时 3D 数据可视化系统，用于演示 OBB (Oriented Bounding Box) 数据的传输和渲染。
+
+**核心功能**:
+- 实时数据传输（使用 ZeroMQ PUB/SUB 模式）
+- 3D 数据可视化（使用 PyOpenGL）
+- 支持数据压缩传输（zlib）
+- 支持点云数据渲染
+- 跨平台支持（Linux/Windows）
+
+**应用场景**:
+- 3D 物体检测结果可视化
+- 实时传感器数据监控
+- 机器人感知系统调试
+- 多模态数据融合展示
+
+---
+
+## 技术架构
+
+### 系统架构
+
+```
+┌─────────────────┐         ZMQ PUB/SUB          ┌──────────────────┐
+│  Sender (C++)   │ ──────── tcp://5555 ────────>│  Receiver (Py)   │
+│                 │                               │                  │
+│ - 生成 OBB 数据  │                               │ - 接收 OBB 数据   │
+│ - JSON 序列化   │                               │ - 解析数据       │
+│ - ZMQ 发布      │                               │ - OpenGL 渲染    │
+└─────────────────┘                               └──────────────────┘
+                                                          │
+                                                          v
+                                                  ┌──────────────────┐
+                                                  │  LCPSViewer (Py) │
+                                                  │  - 增强版查看器   │
+                                                  └──────────────────┘
+```
+
+**数据流**:
+1. Sender 生成 OBB 数据（type, position, rotation, size）
+2. 数据序列化为 JSON 格式
+3. 通过 ZMQ PUB socket 发布
+4. Receiver 通过 ZMQ SUB socket 订阅
+5. 支持三种接收模式：
+   - Normal: 直接接收 JSON
+   - Compressed: 接收 zlib 压缩的 BSON
+   - Compressed OBB: 仅压缩 OBB 数据
+6. OpenGL 渲染 3D 线框立方体
+
+---
+
+## 技术栈
+
+### 编程语言
+
+| 语言 | 版本 | 用途 | 比例 |
+|------|------|------|------|
+| **Python** | 3.x | 接收端、可视化 | 83% |
+| **C++** | C++11 | 发送端 | 17% |
+
+### 核心依赖
+
+#### Python 依赖
+
+| 库 | 版本 | 用途 |
+|---|------|------|
+| **pyzmq** | latest | ZeroMQ Python 绑定 |
+| **pygame** | latest | 窗口管理和事件循环 |
+| **PyOpenGL** | latest | OpenGL 3D 渲染 |
+| **numpy** | latest | 数值计算 |
+| **zlib** | 内置 | 数据压缩 |
+| **bson** | latest | 二进制序列化 |
+| **pympler** | latest | 内存分析（可选）|
+
+#### C++ 依赖
+
+| 库 | 版本 | 用途 |
+|---|------|------|
+| **libzmq** | 3+ | ZeroMQ 核心库 |
+| **cppzmq** | latest | ZeroMQ C++ 头文件封装 |
+| **nlohmann/json** | 3+ | JSON 序列化 |
+| **Intel TBB** | latest | 并行计算（可选）|
+
+#### 构建工具
+
+| 工具 | 用途 |
+|------|------|
+| **CMake** | C++ 项目构建 |
+| **PyInstaller** | Python 打包（LCPSViewer.spec）|
+
+---
+
+## 开发标准
+
+### 代码规范
+
+**Python**:
+- 遵循 PEP 8 风格指南
+- 类名使用 CamelCase（如 `OBB`）
+- 函数名使用 snake_case（如 `draw_wire_cube`）
+- 使用类型注解（推荐）
+
+**C++**:
+- 遵循 C++11 标准
+- 使用现代 C++ 特性（智能指针、lambda 等）
+- 变量名使用 camelCase
+- 类名使用 PascalCase
+
+### 配置管理
+
+**网络配置**:
+- 默认端口: 5555
+- 默认协议: TCP
+- ZMQ 模式: PUB/SUB
+- 地址格式: `IP:PORT`（如 `localhost:5555`）
+
+**渲染配置**:
+- 默认分辨率: 800x600
+- 支持窗口缩放: ✅
+- 双缓冲: ✅
+- 透视投影: FOV 45°, near 0.1, far 50.0
+
+---
+
+## 架构决策记录 (ADR)
+
+### ADR 2025-12-20: 选择 ZeroMQ 作为通信框架
+
+**背景**:
+需要实现 C++ 发送端和 Python 接收端之间的实时数据传输。
+
+**决策**:
+选择 ZeroMQ (PUB/SUB 模式) 而非其他方案（如 gRPC, ROS, 原生 Socket）。
+
+**理由**:
+- ✅ **跨语言支持**: C++ 和 Python 均有成熟绑定
+- ✅ **无服务器架构**: PUB/SUB 无需中心化 broker
+- ✅ **低延迟**: 适合实时数据传输
+- ✅ **简单易用**: API 简洁，学习曲线平缓
+- ✅ **灵活的传输模式**: 支持 TCP, IPC, inproc
+
+**权衡**:
+- ❌ 无内置服务发现（需手动配置 IP:PORT）
+- ❌ 无持久化支持（需自行实现）
+- ✅ 对于演示和调试场景，这些缺点可接受
+
+### ADR 2025-12-20: 使用 PyOpenGL 而非其他 3D 库
+
+**背景**:
+需要实时渲染 3D OBB 数据。
+
+**决策**:
+选择 PyOpenGL + Pygame 而非 Matplotlib 3D, VTK, Three.js 等。
+
+**理由**:
+- ✅ **性能**: 直接使用 OpenGL，渲染效率高
+- ✅ **灵活性**: 完全控制渲染流程
+- ✅ **轻量**: 无需重量级框架
+- ✅ **与 Pygame 集成良好**: 窗口管理简单
+
+**权衡**:
+- ❌ 需要手动实现相机控制、着色器等
+- ✅ 对于线框渲染的简单场景，手动实现成本可控
+
+### ADR 2025-12-20: 支持压缩模式
+
+**背景**:
+大量 OBB 数据传输可能导致带宽瓶颈。
+
+**决策**:
+实现三种数据模式（normal, compressed, compressed_obb）。
+
+**理由**:
+- ✅ **带宽优化**: zlib 压缩可减少 60-80% 数据量
+- ✅ **灵活性**: 用户可根据网络条件选择模式
+- ✅ **向后兼容**: normal 模式保持与旧版本兼容
+
+**实现**:
+- `recv_obb()`: 接收原始 JSON
+- `recv_compressed_data()`: 接收 zlib 压缩的 BSON（包含 OBB + 点云）
+- `recv_compressed_obb()`: 仅压缩 OBB 数据
+
+---
+
+## 功能路线图
+
+### 已完成功能 ✅
+
+- [x] ZMQ PUB/SUB 通信
+- [x] OBB 数据结构定义
+- [x] OpenGL 线框渲染
+- [x] JSON 序列化/反序列化
+- [x] 数据压缩支持（zlib + BSON）
+- [x] 点云数据支持
+- [x] 命令行参数解析（debug, mode, address）
+- [x] Linux/Windows 二进制打包
+
+### 正在开发功能 🔄
+
+无
+
+### 计划功能 📋
+
+- [ ] 配置文件支持（YAML/JSON）
+- [ ] 多相机视角切换
+- [ ] OBB 碰撞检测可视化
+- [ ] 性能统计和 FPS 显示
+- [ ] 录制和回放功能
+- [ ] GUI 控制面板
+
+---
+
+## 部署和发布
+
+### 支持平台
+
+| 平台 | 状态 | 说明 |
+|------|------|------|
+| **Linux** | ✅ 完全支持 | Ubuntu 18.04+ 测试通过 |
+| **Windows** | ✅ 完全支持 | Windows 10+ 测试通过 |
+| **macOS** | ⚠️ 未测试 | 理论支持，需验证 |
+
+### 打包方式
+
+**Python 接收端**:
+- 使用 PyInstaller 打包（LCPSViewer.spec）
+- 输出目录: `dist/`
+- 打包命令: `pyinstaller LCPSViewer.spec`
+
+**C++ 发送端**:
+- 使用 CMake 构建
+- 输出目录: `build/`
+- 构建命令:
+  ```bash
+  mkdir build && cd build
+  cmake ..
+  make
+  ```
+
+---
+
+## 维护和支持
+
+### 版本控制
+
+**Git 分支策略**:
+- **master**: 稳定版本
+- **develop**: 开发版本（如需要）
+- **feature/***:  功能分支（如需要）
+
+**提交规范**:
+```
+[type] subject
+
+详细说明（可选）
+```
+
+**类型标签**:
+- `[feat]` - 新功能
+- `[fix]` - Bug 修复
+- `[perf]` - 性能优化
+- `[chore]` - 构建/配置更新
+- `[docs]` - 文档更新
+
+---
+
+## 性能考量
+
+### 数据压缩效果
+
+**测试场景**: 100 个 OBB 对象
+
+| 模式 | 数据大小 | 压缩率 | CPU 开销 |
+|------|---------|--------|---------|
+| Normal (JSON) | ~10 KB | - | 低 |
+| Compressed (BSON+zlib) | ~2-4 KB | 60-80% | 中等 |
+| Compressed OBB | ~2 KB | 80% | 低 |
+
+**建议**:
+- 本地网络（localhost）: 使用 normal 模式
+- 局域网（LAN）: 使用 compressed 模式
+- 低带宽网络: 使用 compressed_obb 模式
+
+### 渲染性能
+
+**目标帧率**: 30 FPS
+**瓶颈**: OpenGL 绘制（`glBegin`/`glEnd` 模式）
+
+**优化方向**:
+- 使用 VBO (Vertex Buffer Object)
+- 批量绘制
+- 视锥剔除
+
+---
+
+## 安全和隐私
+
+**当前状态**:
+- ❌ 无认证机制
+- ❌ 无加密传输
+- ❌ 无访问控制
+
+**适用场景**:
+- ✅ 本地调试
+- ✅ 可信网络环境
+- ❌ 公网部署（不推荐）
+
+**改进方向**:
+- 添加 ZMQ CurveZMQ 加密
+- 实现简单的 token 认证
+- 限制绑定地址（不使用 `*`）
+
+---
+
+## 参考资料
+
+### 官方文档
+
+- [ZeroMQ Guide](https://zguide.zeromq.org/)
+- [PyOpenGL Documentation](http://pyopengl.sourceforge.net/)
+- [Pygame Documentation](https://www.pygame.org/docs/)
+
+### 相关项目
+
+- [cppzmq](https://github.com/zeromq/cppzmq) - ZeroMQ C++ 绑定
+- [nlohmann/json](https://github.com/nlohmann/json) - Modern JSON for C++
+
+---
+
+**文档维护**: 此文档应在以下情况更新：
+- 添加新的技术栈或依赖
+- 做出重大架构决策
+- 更新功能路线图
+- 修改开发规范
