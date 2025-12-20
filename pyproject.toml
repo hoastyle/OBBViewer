@@ -1,0 +1,17 @@
+[project]
+name = "obbdemo"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.0",
+    "pygame>=2.6.1",
+    "pymongo>=4.15.5",
+    "pyopengl>=3.1.10",
+    "pyzmq>=27.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.17.0",
+]

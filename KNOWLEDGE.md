@@ -1,6 +1,6 @@
 # OBBDemo 知识库
 
-**最后更新**: 2025-12-20
+**最后更新**: 2025-12-21
 
 本文档是项目的知识中心，索引所有架构决策、文档、设计模式和已知问题。
 
@@ -97,6 +97,47 @@
 - `recv_compressed_obb()`: 仅压缩 OBB
 
 **详细文档**: PLANNING.md § ADR
+
+---
+
+#### ADR 2025-12-21: 文件管理和依赖现代化
+
+**核心决策**: 恢复 LCPSViewer.py、清理冗余文件、采用现代 uv 依赖管理
+
+**背景**:
+- LCPSViewer.py 被错误重命名为 .bak，导致打包入口丢失
+- recv.py 和 LCPSViewer.py.bak 内容重复
+- 原始 pip + requirements.txt 不够现代化
+
+**决策**:
+1. **文件恢复**：LCPSViewer.py.bak → LCPSViewer.py
+2. **重复清理**：recv.py 改为符号链接（向后兼容）
+3. **目录整理**：triangle.py 移至 examples/ 目录
+4. **现代化**：使用 uv 替代 pip，pyproject.toml 替代 requirements.txt
+
+**关键理由**:
+- ✅ 恢复项目打包功能（阻塞性问题修复）
+- ✅ 采用行业标准（uv 是 Astral 官方工具）
+- ✅ 简化依赖管理（pyproject.toml 单源真实）
+- ✅ 提升开发体验（uv sync, uv add, uv run）
+
+**实现**:
+- 文件恢复和清理完成
+- pyproject.toml 添加所有依赖声明
+- uv.lock 记录确定的依赖版本
+- LCPSViewer.spec 优化了 hiddenimports
+
+**验证**:
+- ✅ 可执行文件打包成功 (40MB)
+- ✅ 命令行参数正常工作
+- ✅ 所有依赖正确导入
+
+**状态**: 已采纳 (2025-12-21)
+
+**影响范围**:
+- 项目结构更清晰
+- 打包工作流更简洁
+- 依赖管理更可靠
 
 ---
 
@@ -282,6 +323,58 @@ data = bson.loads(decompressed)
 - [ZMQ Guide - Slow Joiner Problem](https://zguide.zeromq.org/docs/chapter2/#Slow-Subscriber-Detection)
 
 **相关文档**: docs/architecture/system-design.md § 通信机制
+
+---
+
+### 问题 4: Git 仓库体积过大 ✅
+
+**症状**:
+- .git 目录占用 344 MB
+- clone 和 pull 操作缓慢
+
+**根本原因**:
+- dist/ 目录（二进制构建产物）被提交到 Git 历史
+- 310MB Linux 二进制 + 35MB Windows 二进制
+
+**解决方案**:
+1. 使用 `git-filter-repo` 从历史中删除 dist/：
+   ```bash
+   # 安装工具
+   pip3 install --user git-filter-repo
+
+   # 删除 dist/ 及其历史（不可逆）
+   git-filter-repo --path dist/ --invert-paths --force
+   ```
+
+2. 添加 .gitignore 规则防止再次提交：
+   ```
+   # Build artifacts
+   dist/
+   build/
+   *.pyc
+   __pycache__/
+   ```
+
+3. 如果有远程仓库，需要强制推送：
+   ```bash
+   git push origin --force --all
+   git push origin --force --tags
+   ```
+
+**效果**:
+- .git 从 344 MB 降至 1.2 MB（**99.7% 减少**）
+- Git 历史中的 dist/ 文件完全清除
+
+**注意事项**:
+- ⚠️ 强制推送会重写远程历史
+- ⚠️ 所有协作者需要重新克隆仓库
+- ✅ 执行前建议创建备份标签：`git tag backup-before-cleanup`
+
+**相关资源**:
+- [git-filter-repo 文档](https://github.com/newren/git-filter-repo)
+- [.gitignore 最佳实践](https://github.com/github/gitignore)
+
+**解决日期**: 2025-12-20
 
 ---
 
