@@ -204,8 +204,8 @@ def recv_compressed_data(socket, obbs, points):
     try:
         ori_data = socket.recv(flags=zmq.NOBLOCK)
         original_size = int.from_bytes(ori_data[:4], byteorder="big")
-        decompressed_bson = zlib.decompress(ori_data)
-        data = bson.loads(decompressed_bson)
+        decompressed_json = zlib.decompress(ori_data[4:])  # Skip 4-byte size prefix
+        data = json.loads(decompressed_json)
         json_data = data["data"]
         if "points" in data:
             json_points = data["points"]
@@ -248,8 +248,8 @@ def recv_compressed_obb(socket, obbs):
     try:
         ori_data = socket.recv(flags=zmq.NOBLOCK)
         original_size = int.from_bytes(ori_data[:4], byteorder="big")
-        decompressed_bson = zlib.decompress(ori_data)
-        data = bson.loads(decompressed_bson)
+        decompressed_json = zlib.decompress(ori_data[4:])  # Skip 4-byte size prefix
+        data = json.loads(decompressed_json)
         json_data = data["data"]
 
         if debug_info:

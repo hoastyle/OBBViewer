@@ -5,13 +5,15 @@ type: "API参考"
 status: "完成"
 priority: "高"
 created_date: "2025-12-20"
-last_updated: "2025-12-20"
+last_updated: "2025-12-21"
 related_documents:
   - "docs/architecture/system-design.md"
   - "docs/usage/quick-start.md"
 related_code:
   - "sender.cpp:12-17"
+  - "sender.cpp:45-70"
   - "recv.py:19-27"
+  - "recv.py:203-227"
 ---
 
 # OBBDemo 数据格式规范
@@ -198,21 +200,27 @@ data = json.loads(message)  // JSON 反序列化
 
 ---
 
-### 模式 2: Compressed (压缩 BSON)
+### 模式 2: Compressed (压缩 JSON)
 
 **适用场景**: 带宽受限、大量数据
 
-**格式**: zlib 压缩的 BSON
+**格式**: 4字节原始大小（big-endian）+ zlib 压缩的 JSON
 
-**示例**（解压后的 BSON）:
-```python
+**二进制格式**:
+```
+[4 bytes: original_size (big-endian)] [N bytes: zlib compressed JSON data]
+```
+
+**示例**（解压后的 JSON）:
+```json
 {
-  "obbs": [
+  "data": [
     {
       "type": "A",
       "position": [0.0, 0.0, 0.0],
-      "rotation": [0.0, 0.0, 0.0],
-      "size": [5.0, 5.0, 5.0]
+      "rotation": [1.0, 0.0, 0.0, 0.0],
+      "size": [5.0, 5.0, 5.0],
+      "collision_status": 0
     },
     ...
   ],
@@ -225,48 +233,57 @@ data = json.loads(message)  // JSON 反序列化
 ```
 
 **ZMQ 传输**:
-```python
-# Sender (需实现)
-data_bson = bson.dumps({"obbs": obbs, "points": points})
-compressed = zlib.compress(data_bson)
-socket.send(compressed)
+```cpp
+// Sender (C++)
+json j = {{"data", obbs_array}};
+std::string json_str = j.dump();
 
+// 创建 4字节 size prefix (big-endian) + 压缩数据
+std::vector<uint8_t> compressed(4);
+uint32_t orig_size = json_str.size();
+compressed[0] = (orig_size >> 24) & 0xFF;
+compressed[1] = (orig_size >> 16) & 0xFF;
+compressed[2] = (orig_size >> 8) & 0xFF;
+compressed[3] = orig_size & 0xFF;
+
+// zlib 压缩
+uLongf compressed_size = compressBound(json_str.size());
+compressed.resize(compressed_size + 4);
+compress(compressed.data() + 4, &compressed_size,
+         (const uint8_t*)json_str.data(), json_str.size());
+compressed.resize(compressed_size + 4);
+
+socket.send(zmq::message_t(compressed.data(), compressed.size()));
+```
+
+```python
 # Receiver (Python)
 ori_data = socket.recv(flags=zmq.NOBLOCK)
-decompressed = zlib.decompress(ori_data)
-data = bson.loads(decompressed)
+
+# 解析前4字节（原始大小）
+original_size = int.from_bytes(ori_data[:4], byteorder="big")
+
+# 解压数据（跳过前4字节）
+decompressed_json = zlib.decompress(ori_data[4:])
+
+# 验证大小
+assert len(decompressed_json) == original_size
+
+# 解析 JSON
+data = json.loads(decompressed_json)
+obbs = data["data"]
 ```
+
+**数据大小**:
+- 原始 JSON: ~228 bytes (单个 OBB)
+- 压缩后: ~113 bytes (单个 OBB)
+- 压缩率: ~50%
 
 **数据大小**（100 个 OBB）: ~2-4 KB（压缩率 60-80%）
 
-**代码位置**: recv.py:195-227
-
----
-
-### 模式 3: Compressed OBB Only
-
-**适用场景**: 仅传输 OBB，无点云
-
-**格式**: zlib 压缩的 BSON（仅 OBB 数组）
-
-**示例**（解压后的 BSON）:
-```python
-{
-  "obbs": [
-    {
-      "type": "A",
-      "position": [0.0, 0.0, 0.0],
-      "rotation": [0.0, 0.0, 0.0],
-      "size": [5.0, 5.0, 5.0]
-    },
-    ...
-  ]
-}
-```
-
-**数据大小**（100 个 OBB）: ~2 KB（压缩率 80%）
-
-**代码位置**: recv.py:229-259
+**代码位置**:
+- Sender: sender.cpp:45-70
+- Receiver: recv.py:203-227
 
 ---
 
@@ -328,19 +345,28 @@ data = bson.loads(decompressed)
 
 ### 模式选择建议
 
-**使用 Normal 模式**:
+**使用 Normal 模式**（默认）:
 - ✅ 本地网络（localhost）
 - ✅ 调试和开发
 - ✅ OBB 数量 < 100
+- ✅ 简单场景，无需优化带宽
 
 **使用 Compressed 模式**:
-- ✅ 局域网（LAN）
+- ✅ 局域网（LAN）或广域网
 - ✅ OBB 数量 > 100
 - ✅ 包含点云数据
+- ✅ 需要节省 50% 带宽
 
-**使用 Compressed OBB 模式**:
-- ✅ 低带宽网络
-- ✅ 仅传输 OBB，无点云
+**命令行示例**:
+```bash
+# 普通模式
+./sender -m n          # 或 ./sender（默认）
+python recv.py -a localhost:5555 -m n
+
+# 压缩模式
+./sender -m c
+python recv.py -a localhost:5555 -m c
+```
 
 ---
 

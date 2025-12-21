@@ -50,12 +50,21 @@ git submodule update --init --recursive
 mkdir build && cd build
 cmake ..
 make
+
+# 普通模式（默认）
 ./sender
+
+# 或使用压缩模式
+./sender -m c
 ```
 
 **Step 2: 启动接收端**
 ```bash
+# 普通模式
 python3 recv.py -a localhost:5555 -m n
+
+# 或使用压缩模式（需与 sender 模式匹配）
+python3 recv.py -a localhost:5555 -m c
 ```
 
 完整的快速开始指南见 [快速开始](docs/usage/quick-start.md)。
@@ -90,6 +99,18 @@ python3 recv.py -a localhost:5555 -m n
 
 ## 命令行参数
 
+### sender (C++)
+
+```bash
+./sender [-m <MODE>]
+```
+
+| 参数 | 说明 | 示例 | 默认值 |
+|------|------|------|--------|
+| `-m` | 数据模式（可选）| `normal`/`n` 或 `compressed`/`c` | `normal` |
+
+**压缩效果**: 压缩模式可减少约 50% 的数据传输量（228 bytes → 113 bytes）
+
 ### recv.py
 
 ```bash
@@ -101,6 +122,8 @@ python3 recv.py -a <IP:PORT> [-m <MODE>] [-d]
 | `-a / --address` | 连接地址（必需）| `localhost:5555` |
 | `-m / --mode` | 数据模式（可选）| `n` (normal) 或 `c` (compressed) |
 | `-d / --debug` | 调试模式（可选）| - |
+
+**注意**: sender 和 receiver 的模式必须匹配才能正常通信。
 
 ## 技术栈
 
