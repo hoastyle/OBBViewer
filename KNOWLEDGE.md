@@ -24,6 +24,7 @@
 | 数据格式 | docs/api/data-format.md | OBB 数据结构、ZMQ 消息格式 | 高 | 2025-12-20 |
 | 开发环境 | docs/development/setup.md | 环境配置、依赖安装、编译 | 高 | 2025-12-20 |
 | 快速开始 | docs/usage/quick-start.md | 安装、运行、基本使用 | 高 | 2025-12-20 |
+| 部署指南 | docs/deployment/binary-release.md | PyInstaller 打包、二进制发布 | 中 | 2025-12-21 |
 
 ### 任务-文档关联
 
@@ -32,7 +33,8 @@
 | 添加新依赖 | docs/management/PLANNING.md § 技术栈, docs/development/setup.md |
 | 修改数据格式 | docs/api/data-format.md, docs/architecture/system-design.md |
 | 性能优化 | docs/management/PLANNING.md § 性能考量 |
-| 部署项目 | docs/usage/quick-start.md, docs/development/setup.md |
+| 部署项目 | docs/deployment/binary-release.md, docs/usage/quick-start.md |
+| 故障排查 | KNOWLEDGE.md § 常见问题, docs/development/setup.md |
 
 ---
 
@@ -50,16 +52,11 @@
 
 #### ADR 2025-12-20: 选择 ZeroMQ 作为通信框架
 
-**核心决策**: 使用 ZeroMQ PUB/SUB 模式而非 gRPC、ROS 或原生 Socket
+**决策**: 使用 ZeroMQ PUB/SUB 而非 gRPC、ROS 或原生 Socket
 
-**关键理由**:
-- 跨语言支持（C++ ↔ Python）
-- 无服务器架构（无中心化 broker）
-- 低延迟、简单易用
+**理由**: 跨语言支持、无服务器架构、低延迟、简单易用
 
-**权衡**:
-- ✅ 适合演示和调试场景
-- ❌ 无内置服务发现和持久化（可接受）
+**权衡**: ✅ 适合演示调试场景 | ❌ 无内置服务发现（可接受）
 
 **详细文档**: PLANNING.md § ADR
 
@@ -67,16 +64,11 @@
 
 #### ADR 2025-12-20: 使用 PyOpenGL 而非其他 3D 库
 
-**核心决策**: 使用 PyOpenGL + Pygame 而非 Matplotlib 3D、VTK、Three.js
+**决策**: 使用 PyOpenGL + Pygame 而非 Matplotlib 3D、VTK、Three.js
 
-**关键理由**:
-- 直接使用 OpenGL，性能高
-- 完全控制渲染流程
-- 轻量，与 Pygame 集成良好
+**理由**: 直接使用 OpenGL 性能高、完全控制渲染流程、轻量
 
-**权衡**:
-- ❌ 需手动实现相机控制、着色器
-- ✅ 线框渲染场景简单，手动实现成本可控
+**权衡**: ❌ 需手动实现相机控制 | ✅ 线框渲染场景简单，成本可控
 
 **详细文档**: PLANNING.md § ADR
 
@@ -84,17 +76,9 @@
 
 #### ADR 2025-12-20: 支持压缩模式
 
-**核心决策**: 实现三种数据模式（normal, compressed, compressed_obb）
+**决策**: 实现三种数据模式（normal, compressed, compressed_obb）
 
-**关键理由**:
-- zlib 压缩可减少 60-80% 数据量
-- 用户可根据网络条件选择模式
-- normal 模式保持向后兼容
-
-**实现**:
-- `recv_obb()`: 原始 JSON
-- `recv_compressed_data()`: zlib + BSON (OBB + 点云)
-- `recv_compressed_obb()`: 仅压缩 OBB
+**理由**: zlib 压缩可减少 60-80% 数据量，用户可根据网络条件选择
 
 **详细文档**: PLANNING.md § ADR
 
@@ -102,279 +86,57 @@
 
 #### ADR 2025-12-21: 文件管理和依赖现代化
 
-**核心决策**: 恢复 LCPSViewer.py、清理冗余文件、采用现代 uv 依赖管理
+**决策**: 恢复 LCPSViewer.py、清理冗余文件、采用 uv 依赖管理
 
-**背景**:
-- LCPSViewer.py 被错误重命名为 .bak，导致打包入口丢失
-- recv.py 和 LCPSViewer.py.bak 内容重复
-- 原始 pip + requirements.txt 不够现代化
+**理由**: ✅ 恢复项目打包功能 | ✅ 采用行业标准 | ✅ 简化依赖管理
 
-**决策**:
-1. **文件恢复**：LCPSViewer.py.bak → LCPSViewer.py
-2. **重复清理**：recv.py 改为符号链接（向后兼容）
-3. **目录整理**：triangle.py 移至 examples/ 目录
-4. **现代化**：使用 uv 替代 pip，pyproject.toml 替代 requirements.txt
+**验证**: ✅ 可执行文件打包成功 (40MB) | ✅ 所有依赖正确导入
 
-**关键理由**:
-- ✅ 恢复项目打包功能（阻塞性问题修复）
-- ✅ 采用行业标准（uv 是 Astral 官方工具）
-- ✅ 简化依赖管理（pyproject.toml 单源真实）
-- ✅ 提升开发体验（uv sync, uv add, uv run）
-
-**实现**:
-- 文件恢复和清理完成
-- pyproject.toml 添加所有依赖声明
-- uv.lock 记录确定的依赖版本
-- LCPSViewer.spec 优化了 hiddenimports
-
-**验证**:
-- ✅ 可执行文件打包成功 (40MB)
-- ✅ 命令行参数正常工作
-- ✅ 所有依赖正确导入
-
-**状态**: 已采纳 (2025-12-21)
-
-**影响范围**:
-- 项目结构更清晰
-- 打包工作流更简洁
-- 依赖管理更可靠
+**详细文档**: PLANNING.md § ADR
 
 ---
 
 ## 🎨 设计模式和最佳实践
 
-### 数据传输模式
-
-**模式**: ZeroMQ PUB/SUB（发布-订阅）
-
-**应用场景**:
-- sender.cpp 作为 Publisher
-- recv.py 作为 Subscriber
-- 支持一对多广播
-
-**代码示例**:
-```cpp
-// Publisher (sender.cpp)
-zmq::context_t context(1);
-zmq::socket_t publisher(context, ZMQ_PUB);
-publisher.bind("tcp://*:5555");
-publisher.send(zmq_msg, zmq::send_flags::dontwait);
-```
-
-```python
-# Subscriber (recv.py)
-context = zmq.Context()
-socket = context.socket(zmq.SUB)
-socket.connect(f"tcp://{ip}:{port}")
-socket.setsockopt_string(zmq.SUBSCRIBE, "")
-message = socket.recv(flags=zmq.NOBLOCK)
-```
-
-**最佳实践**:
-- ✅ 使用 `NOBLOCK` 模式避免阻塞渲染
-- ✅ Publisher 使用 `bind()`，Subscriber 使用 `connect()`
-- ✅ 设置合理的发送频率（当前 100ms）
-
-**相关文档**: docs/architecture/system-design.md
-
----
-
-### 3D 渲染模式
-
-**模式**: 立即模式渲染（Immediate Mode）
-
-**实现**:
-```python
-def draw_wire_cube(size=1.0, color=(1, 1, 1)):
-    glBegin(GL_LINES)
-    glColor3f(*color)
-    # 绘制顶点...
-    glEnd()
-```
-
-**适用场景**:
-- 简单的线框渲染
-- OBB 数量 < 1000
-
-**已知限制**:
-- ❌ 性能瓶颈：大量 OBB（>1000）时帧率下降
-- ❌ 使用过时的 OpenGL API（glBegin/glEnd）
-
-**优化方向** (见 TASK.md § 任务 13):
-- 改用 VBO (Vertex Buffer Object)
-- 批量绘制
-- 视锥剔除
-
-**相关文档**: docs/architecture/system-design.md
-
----
-
-### 数据序列化模式
-
-**模式**: JSON 序列化（C++）+ JSON/BSON 反序列化（Python）
-
-**C++ 端**:
-```cpp
-// nlohmann/json
-json j;
-j.push_back({{"type", obb.type}, {"position", obb.position}, ...});
-std::string msg = j.dump();
-```
-
-**Python 端**:
-```python
-# Normal mode
-data = json.loads(message)
-
-# Compressed mode
-decompressed = zlib.decompress(ori_data)
-data = bson.loads(decompressed)
-```
-
-**权衡**:
-- ✅ JSON: 人类可读，调试方便
-- ❌ JSON: 数据量大
-- ✅ BSON + zlib: 数据量小（60-80% 压缩率）
-- ❌ BSON + zlib: CPU 开销增加
-
-**相关文档**: docs/api/data-format.md
+| 模式 | 说明 | 详细文档 |
+|------|------|---------|
+| **ZeroMQ PUB/SUB** | 发布-订阅模式，一对多广播 | docs/architecture/system-design.md § 通信机制 |
+| **立即模式渲染** | OpenGL 立即模式，适合简单线框（<1000 OBB）| docs/architecture/system-design.md § 渲染流程 |
+| **JSON/BSON 序列化** | 支持普通和压缩模式，60-80% 压缩率 | docs/api/data-format.md § 序列化方式 |
 
 ---
 
 ## ❓ 已知问题和解决方案
 
-### 问题 1: 大量 OBB 时帧率下降 ⚠️
+| 问题 | 状态 | 严重性 | 解决方案文档 |
+|------|------|--------|-------------|
+| **大量 OBB 时帧率下降** | ⚠️ 已知 | 中 | PLANNING.md § 性能考量, TASK.md § 任务 13 |
+| **Windows 下 PyInstaller 打包** | ✅ 已解决 | 低 | docs/development/setup.md § 打包说明 |
+| **ZMQ 消息丢失（慢连接者）** | ⚠️ 已知 | 低 | docs/architecture/system-design.md § 通信机制 |
+| **Git 仓库体积过大** | ✅ 已解决 | 低 | .gitignore 规则已添加 |
 
-**症状**:
-- OBB 数量 > 1000 时，FPS 降至 10 以下
-- CPU 占用高
+**详细解决方案**: 见对应文档或 TASK.md 中的相关任务
 
-**根本原因**:
-- 使用立即模式渲染（`glBegin`/`glEnd`）
-- 每个 OBB 独立绘制，无批量优化
+### 常见问题 (FAQ)
 
-**临时解决方案**:
-- 限制 OBB 数量
-- 使用压缩模式减少网络延迟
+**Q1: 如何快速验证 ZMQ 通信是否正常？**
+- 先启动 sender: `./sender`
+- 再启动 receiver: `python3 recv.py -a localhost:5555 -m n`
+- 检查是否有 OBB 数据显示在窗口中
 
-**长期解决方案**（见 TASK.md § 任务 13）:
-- 改用 VBO (Vertex Buffer Object)
-- 实现视锥剔除
-- 批量绘制
+**Q2: 为什么接收器显示窗口是黑屏？**
+- 检查 sender 是否正在发送数据
+- 确认端口和 IP 地址是否正确（默认 localhost:5555）
+- 使用 `-d` 调试模式查看详细日志
 
-**相关文档**: PLANNING.md § 性能考量
+**Q3: 如何切换到压缩模式？**
+- 使用 `-m compressed` 参数: `python3 recv.py -m compressed`
+- Sender 端需要支持压缩模式发送
 
----
-
-### 问题 2: Windows 下 PyInstaller 打包失败 🔧
-
-**症状**:
-- `pyinstaller LCPSViewer.spec` 报错：找不到 OpenGL.dll
-
-**根本原因**:
-- PyOpenGL 依赖系统 OpenGL 库
-- PyInstaller 未自动打包 OpenGL.dll
-
-**解决方案**:
-1. 在 LCPSViewer.spec 中添加 hidden imports:
-   ```python
-   hiddenimports=['OpenGL.GL', 'OpenGL.GLU', 'pygame']
-   ```
-
-2. 手动复制 OpenGL.dll 到 dist/ 目录
-
-3. 使用 `--collect-all PyOpenGL` 参数:
-   ```bash
-   pyinstaller --collect-all PyOpenGL LCPSViewer.spec
-   ```
-
-**相关资源**:
-- [PyOpenGL FAQ](http://pyopengl.sourceforge.net/documentation/faq.html)
-- [PyInstaller Manual](https://pyinstaller.org/en/stable/)
-
-**相关文档**: docs/development/setup.md § 打包
-
----
-
-### 问题 3: ZMQ 消息丢失 ⚠️
-
-**症状**:
-- Receiver 偶尔接收不到消息
-- 数据流不连续
-
-**根本原因**:
-- PUB/SUB 模式的"慢连接者"问题
-- Subscriber 连接后，Publisher 可能已发送了部分消息
-
-**解决方案**:
-1. **临时方案**: Publisher 启动后等待 1 秒再发送数据
-   ```cpp
-   publisher.bind("tcp://*:5555");
-   std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待连接
-   ```
-
-2. **推荐方案**: 使用 REQ/REP 模式实现握手协议
-   - Subscriber 连接后发送 READY 消息
-   - Publisher 收到后开始发送数据
-
-3. **备选方案**: 改用 PUSH/PULL 模式（但失去一对多能力）
-
-**相关资源**:
-- [ZMQ Guide - Slow Joiner Problem](https://zguide.zeromq.org/docs/chapter2/#Slow-Subscriber-Detection)
-
-**相关文档**: docs/architecture/system-design.md § 通信机制
-
----
-
-### 问题 4: Git 仓库体积过大 ✅
-
-**症状**:
-- .git 目录占用 344 MB
-- clone 和 pull 操作缓慢
-
-**根本原因**:
-- dist/ 目录（二进制构建产物）被提交到 Git 历史
-- 310MB Linux 二进制 + 35MB Windows 二进制
-
-**解决方案**:
-1. 使用 `git-filter-repo` 从历史中删除 dist/：
-   ```bash
-   # 安装工具
-   pip3 install --user git-filter-repo
-
-   # 删除 dist/ 及其历史（不可逆）
-   git-filter-repo --path dist/ --invert-paths --force
-   ```
-
-2. 添加 .gitignore 规则防止再次提交：
-   ```
-   # Build artifacts
-   dist/
-   build/
-   *.pyc
-   __pycache__/
-   ```
-
-3. 如果有远程仓库，需要强制推送：
-   ```bash
-   git push origin --force --all
-   git push origin --force --tags
-   ```
-
-**效果**:
-- .git 从 344 MB 降至 1.2 MB（**99.7% 减少**）
-- Git 历史中的 dist/ 文件完全清除
-
-**注意事项**:
-- ⚠️ 强制推送会重写远程历史
-- ⚠️ 所有协作者需要重新克隆仓库
-- ✅ 执行前建议创建备份标签：`git tag backup-before-cleanup`
-
-**相关资源**:
-- [git-filter-repo 文档](https://github.com/newren/git-filter-repo)
-- [.gitignore 最佳实践](https://github.com/github/gitignore)
-
-**解决日期**: 2025-12-20
+**Q4: OpenGL 相关错误如何解决？**
+- Ubuntu: `sudo apt-get install python3-opengl`
+- Windows: 确保安装了图形驱动
+- 检查 OpenGL 版本: 运行 `glxinfo | grep OpenGL`（Linux）
 
 ---
 
@@ -401,27 +163,11 @@ data = bson.loads(decompressed)
 
 ## 📖 学习资源
 
-### ZeroMQ
-
-- **官方指南**: [ZGuide](https://zguide.zeromq.org/)
-- **API 文档**: [ZMQ API Reference](https://zeromq.org/socket-api/)
-- **推荐章节**:
-  - Chapter 2: Sockets and Patterns
-  - Chapter 4: Reliable Request-Reply
-
-### OpenGL
-
-- **入门教程**: [LearnOpenGL](https://learnopengl.com/)
-- **PyOpenGL 文档**: [PyOpenGL Programming Guide](http://pyopengl.sourceforge.net/documentation/)
-- **推荐章节**:
-  - Getting Started: Hello Triangle
-  - Coordinate Systems
-  - Transformations
-
-### 数据压缩
-
-- **zlib 文档**: [zlib Manual](https://www.zlib.net/manual.html)
-- **BSON 规范**: [BSON Specification](http://bsonspec.org/)
+| 主题 | 推荐资源 | 重点章节 |
+|------|---------|---------|
+| **ZeroMQ** | [ZGuide](https://zguide.zeromq.org/) | Ch2: Sockets and Patterns |
+| **OpenGL** | [LearnOpenGL](https://learnopengl.com/) | Coordinate Systems, Transformations |
+| **PyOpenGL** | [PyOpenGL Guide](http://pyopengl.sourceforge.net/documentation/) | Getting Started |
 
 ---
 

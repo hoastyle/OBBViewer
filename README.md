@@ -14,9 +14,21 @@
 
 ### 安装依赖
 
-**Python 接收端**:
+**方式 1: 使用 uv（推荐）**:
 ```bash
-pip install pyzmq pygame PyOpenGL numpy bson
+# 安装 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 同步项目依赖
+uv sync
+
+# 运行接收端
+uv run python LCPSViewer.py -a localhost:5555 -m n
+```
+
+**方式 2: 使用 pip**:
+```bash
+pip install pyzmq pygame PyOpenGL numpy pymongo
 ```
 
 **C++ 发送端**:
@@ -54,6 +66,7 @@ python3 recv.py -a localhost:5555 -m n
 - [数据格式](docs/api/data-format.md) - OBB 数据结构和 ZMQ 消息格式
 - [开发指南](docs/development/setup.md) - 环境配置、依赖安装和构建
 - [用户手册](docs/usage/quick-start.md) - 安装、运行和基本使用
+- [部署指南](docs/deployment/binary-release.md) - PyInstaller 打包和二进制发布
 
 ## 架构概览
 
@@ -92,6 +105,7 @@ python3 recv.py -a <IP:PORT> [-m <MODE>] [-d]
 | **压缩** | zlib |
 | **渲染** | PyOpenGL, Pygame |
 | **构建** | CMake, PyInstaller |
+| **依赖管理** | uv (推荐) / pip |
 
 ## 性能
 
@@ -102,6 +116,21 @@ python3 recv.py -a <IP:PORT> [-m <MODE>] [-d]
 | 1000    | 20  | ~100 KB          | ~20-30 KB           |
 
 ## 开发
+
+### 环境配置
+
+**使用 uv（推荐）**:
+```bash
+# 克隆项目
+git clone <repository-url>
+cd OBBDemo
+
+# 同步所有依赖（包括开发依赖）
+uv sync --group dev
+
+# 运行接收端
+uv run python LCPSViewer.py -a localhost:5555
+```
 
 ### 构建 C++ 发送端
 
@@ -114,10 +143,16 @@ make
 ### 打包 Python 接收端
 
 ```bash
-pyinstaller LCPSViewer.spec
+# 安装开发依赖
+uv sync --group dev
+
+# 打包
+uv run pyinstaller LCPSViewer.spec
 ```
 
 输出目录: `dist/LCPSViewer`
+
+完整的打包和部署流程见 [部署指南](docs/deployment/binary-release.md)。
 
 ## 贡献
 
