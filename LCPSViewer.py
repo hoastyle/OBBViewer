@@ -191,6 +191,13 @@ def recv_obb(socket, obbs):
         ]
     except zmq.Again:
         pass  # No message available
+    except ValueError as e:
+        print(f"❌ Data format error: {e}")
+        print(f"   Hint: rotation should be quaternion [w, x, y, z] (4 values)")
+    except KeyError as e:
+        print(f"❌ Missing field in data: {e}")
+    except Exception as e:
+        print(f"❌ Error processing OBB data: {e}")
 
 
 def recv_compressed_data(socket, obbs, points):
@@ -225,6 +232,16 @@ def recv_compressed_data(socket, obbs, points):
             points[:] = np.array(json_points, dtype=np.float32).reshape(-1, 3)
     except zmq.Again:
         pass  # No message available
+    except zlib.error as e:
+        print(f"❌ Decompression failed: {e}")
+        print(f"   Hint: Sender might not be using compressed mode")
+    except ValueError as e:
+        print(f"❌ Data format error: {e}")
+        print(f"   Hint: rotation should be quaternion [w, x, y, z] (4 values)")
+    except KeyError as e:
+        print(f"❌ Missing field in compressed data: {e}")
+    except Exception as e:
+        print(f"❌ Error processing compressed data: {e}")
 
 
 def recv_compressed_obb(socket, obbs):
@@ -251,6 +268,12 @@ def recv_compressed_obb(socket, obbs):
         ]
     except zmq.Again:
         pass  # No message available
+    except zlib.error as e:
+        print(f"❌ Decompression failed: {e}")
+    except ValueError as e:
+        print(f"❌ Data format error: {e}")
+    except Exception as e:
+        print(f"❌ Error processing compressed OBB data: {e}")
 
 
 def validate_ip_port(value):
@@ -320,6 +343,13 @@ def main():
         debug_info = True
 
     print(f"Data receiving mode: {args.mode}")
+
+    # 检查压缩模式支持
+    if args.mode == "c":
+        print("⚠️  WARNING: Compressed mode requires sender to support zlib+BSON compression.")
+        print("⚠️  Current sender.cpp only supports normal mode (JSON).")
+        print("⚠️  Please use '-m n' for normal mode, or upgrade sender to support compression.")
+        print("\nContinuing in compressed mode (may not receive data)...\n")
 
     ip, port = args.address.split(":")
     print(f"IP address: {ip}")

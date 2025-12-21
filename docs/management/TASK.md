@@ -271,7 +271,7 @@
 **描述**: 根据最新的咨询结果，使用标准的 CMake 模式管理 cppzmq。
 
 **验收标准**:
-- [ ] 完成任务 9.1（Git Submodule 管理）
+- [x] 完成任务 9.1（Git Submodule 管理）✅
 - [ ] CMakeLists.txt 配置清晰，无冗余
 - [ ] 新团队成员能无障碍初始化和构建
 - [ ] 解决当前 CMake find_package 和手动目录的不兼容问题
@@ -287,6 +287,40 @@
 **技术决策**: ADR 记录（待创建）
 
 **关联需求**: 开发流程规范化
+
+---
+
+### 任务 10.1: 实现 sender 压缩模式支持 📋
+**优先级**: 中
+**预估工作量**: 30-60 分钟
+**创建日期**: 2025-12-21
+
+**描述**: sender.cpp 当前只支持 JSON 格式发送，需要实现 zlib + BSON 压缩模式以匹配 recv.py 的压缩模式。
+
+**背景**:
+- recv.py 已支持压缩模式（`-m c`）
+- sender.cpp 未实现压缩，导致压缩模式下无法接收数据
+- 已添加警告提示用户使用普通模式
+
+**验收标准**:
+- [ ] sender.cpp 添加 libbson 依赖
+- [ ] 实现 zlib 压缩功能
+- [ ] 添加命令行参数 `-m` 选择模式（normal/compressed）
+- [ ] 压缩数据格式匹配 recv.py 期望（4字节size + zlib压缩的BSON）
+- [ ] 测试两种模式都能正常工作
+- [ ] 更新 README.md 说明压缩模式用法
+
+**相关文件**:
+- sender.cpp
+- CMakeLists.txt（添加 libbson 依赖）
+- README.md
+- docs/api/data-format.md
+
+**参考实现**: recv.py:196-227 (recv_compressed_data函数)
+
+**相关问题**: KNOWLEDGE.md § FAQ Q3
+
+**关联需求**: 数据压缩传输功能完整性
 
 ---
 

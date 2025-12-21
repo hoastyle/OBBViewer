@@ -12,7 +12,7 @@ struct OBB
 {
     std::string type;
     std::array<double, 3> position;
-    std::array<double, 3> rotation;
+    std::array<double, 4> rotation;  // Quaternion [w, x, y, z]
     std::array<double, 3> size;
 };
 
@@ -26,18 +26,16 @@ std::vector<OBB> generateRandomOBBs(int count)
 
     // Generate A type OBB
     obbs.push_back({"A",
-        // {dis(gen), dis(gen), dis(gen)},
-        // {dis(gen), dis(gen), dis(gen)},
-        // {size_dis(gen), size_dis(gen), size_dis(gen)}
-        {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {5.0, 5.0, 5.0}});
+        {0.0, 0.0, 0.0},           // position
+        {1.0, 0.0, 0.0, 0.0},      // rotation (identity quaternion: no rotation)
+        {5.0, 5.0, 5.0}});         // size
 
     // Generate B type OBBs
     for (int i = 1; i <= count; ++i) {
         obbs.push_back({"B",
-            // {dis(gen), dis(gen), dis(gen)},
-            // {dis(gen), dis(gen), dis(gen)},
-            // {size_dis(gen), size_dis(gen), size_dis(gen)}
-            {2.0, 2.0, 2.0}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}});
+            {2.0, 2.0, 2.0},       // position
+            {1.0, 0.0, 0.0, 0.0},  // rotation (identity quaternion: no rotation)
+            {1.0, 1.0, 1.0}});     // size
     }
 
     return obbs;
@@ -55,8 +53,11 @@ int main()
         auto obbs = generateRandomOBBs(1);
         json j;
         for (const auto& obb : obbs) {
-            j.push_back({{"type", obb.type}, {"position", obb.position}, {"rotation", obb.rotation},
-                {"size", obb.size}});
+            j.push_back({{"type", obb.type},
+                {"position", obb.position},
+                {"rotation", obb.rotation},
+                {"size", obb.size},
+                {"collision_status", 0}});
         }
 
         std::string msg = j.dump();

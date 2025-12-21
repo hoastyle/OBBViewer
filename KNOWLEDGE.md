@@ -125,6 +125,7 @@
 
 | 问题 | 状态 | 严重性 | 解决方案文档 |
 |------|------|--------|-------------|
+| **压缩模式不可用** | ⚠️ 已知 | 中 | 本文档 § FAQ Q3, TASK.md § 待做任务 |
 | **大量 OBB 时帧率下降** | ⚠️ 已知 | 中 | PLANNING.md § 性能考量, TASK.md § 任务 13 |
 | **Windows 下 PyInstaller 打包** | ✅ 已解决 | 低 | docs/development/setup.md § 打包说明 |
 | **ZMQ 消息丢失（慢连接者）** | ⚠️ 已知 | 低 | docs/architecture/system-design.md § 通信机制 |
@@ -145,8 +146,10 @@
 - 使用 `-d` 调试模式查看详细日志
 
 **Q3: 如何切换到压缩模式？**
-- 使用 `-m compressed` 参数: `python3 recv.py -m compressed`
-- Sender 端需要支持压缩模式发送
+- ⚠️ **当前 sender.cpp 不支持压缩模式**
+- 只能使用普通模式: `python3 recv.py -a localhost:5555 -m n`
+- 如果尝试使用 `-m c`，会显示警告但无法接收数据
+- 解决方案: 见 TASK.md 中的"实现 sender 压缩模式"任务
 
 **Q4: OpenGL 相关错误如何解决？**
 - Ubuntu: `sudo apt-get install python3-opengl`
