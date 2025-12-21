@@ -1,6 +1,6 @@
 # OBBDemo 项目规划
 
-**最后更新**: 2025-12-20
+**最后更新**: 2025-12-21
 
 ## 项目概述
 
@@ -186,6 +186,35 @@ OBBDemo 是一个基于 ZeroMQ 的实时 3D 数据可视化系统，用于演示
 - `recv_obb()`: 接收原始 JSON
 - `recv_compressed_data()`: 接收 zlib 压缩的 BSON（包含 OBB + 点云）
 - `recv_compressed_obb()`: 仅压缩 OBB 数据
+
+### ADR 2025-12-21: 使用 Git Submodule 管理 cppzmq 依赖
+
+**背景**:
+原本 cppzmq 通过手动下载 tar.gz 或本地编译管理，导致版本不一致、协作困难。
+
+**决策**:
+使用 Git Submodule 管理 cppzmq 依赖，而非 CMake FetchContent 或手动安装。
+
+**理由**:
+- ✅ **版本明确**: Submodule 锁定特定 commit，确保所有开发者使用相同版本
+- ✅ **协作友好**: `git submodule update --init` 自动获取依赖，新团队成员开箱即用
+- ✅ **无需系统安装**: 避免依赖系统包管理器，跨平台一致性好
+- ✅ **构建集成简单**: `add_subdirectory(thirdparty/cppzmq)` 直接引入，无需额外配置
+- ✅ **离线可用**: 克隆后即包含依赖源码，无需网络
+
+**权衡**:
+- ❌ 需要额外的 `git submodule update` 命令（已在文档中说明）
+- ❌ Submodule 管理稍复杂（但比手动管理 tar.gz 更规范）
+- ✅ 相比 CMake FetchContent，构建时无需网络下载
+
+**备选方案**:
+- CMake FetchContent: 更现代化，但每次 clean build 需要重新下载
+- 系统安装（find_package）: 依赖系统环境，版本不可控
+
+**实施细节**:
+- Submodule URL: `https://github.com/zeromq/cppzmq.git`
+- CMakeLists.txt: `add_subdirectory(thirdparty/cppzmq)`
+- 初始化命令: `git submodule update --init --recursive`
 
 ---
 

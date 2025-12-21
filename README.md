@@ -33,17 +33,23 @@ pip install pyzmq pygame PyOpenGL numpy pymongo
 
 **C++ 发送端**:
 ```bash
-# Ubuntu
+# Ubuntu - 安装系统依赖
 sudo apt-get install libzmq3-dev nlohmann-json3-dev
+
+# 初始化 Git Submodule (cppzmq)
+git submodule update --init --recursive
 ```
 
 详细安装指南见 [开发环境配置](docs/development/setup.md)。
 
 ### 运行示例
 
-**Step 1: 启动发送端**
+**Step 1: 编译并启动发送端**
 ```bash
-g++ -std=c++11 sender.cpp -o sender -lzmq
+# 使用 CMake 构建
+mkdir build && cd build
+cmake ..
+make
 ./sender
 ```
 

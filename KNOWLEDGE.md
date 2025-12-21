@@ -47,6 +47,7 @@
 | 2025-12-20 | 选择 ZeroMQ 作为通信框架 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-20 | 使用 PyOpenGL 而非其他 3D 库 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-20 | 支持压缩模式 | PLANNING.md § ADR | 已采纳 |
+| 2025-12-21 | 使用 Git Submodule 管理 cppzmq 依赖 | PLANNING.md § ADR | 已采纳 |
 
 ### ADR 摘要
 
@@ -91,6 +92,20 @@
 **理由**: ✅ 恢复项目打包功能 | ✅ 采用行业标准 | ✅ 简化依赖管理
 
 **验证**: ✅ 可执行文件打包成功 (40MB) | ✅ 所有依赖正确导入
+
+**详细文档**: PLANNING.md § ADR
+
+---
+
+#### ADR 2025-12-21: 使用 Git Submodule 管理 cppzmq 依赖
+
+**决策**: 使用 Git Submodule 管理 cppzmq，而非 CMake FetchContent 或手动安装
+
+**理由**: ✅ 版本明确 | ✅ 协作友好 | ✅ 无需系统安装 | ✅ 离线可用
+
+**权衡**: ❌ 需额外 submodule update 命令 | ✅ 比手动管理 tar.gz 更规范
+
+**备选方案**: CMake FetchContent (每次 clean build 需下载)、系统安装 (版本不可控)
 
 **详细文档**: PLANNING.md § ADR
 

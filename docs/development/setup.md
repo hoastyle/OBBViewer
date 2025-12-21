@@ -118,17 +118,16 @@ sudo apt install libzmq3-dev nlohmann-json3-dev libtbb-dev
 | **nlohmann/json** | JSON 序列化 | `apt install nlohmann-json3-dev` |
 | **Intel TBB** | 并行计算（可选）| `apt install libtbb-dev` |
 
-### 3. 安装 cppzmq (C++ 头文件)
+### 3. 初始化 cppzmq Submodule
 
+**cppzmq 通过 Git Submodule 管理**，无需手动安装。
+
+**首次克隆项目后，初始化 submodule**:
 ```bash
-cd thirdparty
-git clone https://github.com/zeromq/cppzmq.git
-cd cppzmq
-mkdir build && cd build
-cmake ..
-make
-sudo make install
+git submodule update --init --recursive
 ```
+
+**说明**: cppzmq 是 header-only 库，CMake 会自动通过 `add_subdirectory(thirdparty/cppzmq)` 引入。
 
 ---
 
