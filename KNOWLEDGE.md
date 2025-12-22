@@ -1,6 +1,6 @@
 # OBBDemo 知识库
 
-**最后更新**: 2025-12-22
+**最后更新**: 2025-12-22 (添加多线程架构 ADR)
 
 本文档是项目的知识中心，索引所有架构决策、文档、设计模式和已知问题。
 
@@ -49,6 +49,7 @@
 | 2025-12-20 | 使用 PyOpenGL 而非其他 3D 库 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-20 | 支持压缩模式 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-21 | 使用 Git Submodule 管理 cppzmq 依赖 | PLANNING.md § ADR | 已采纳 |
+| 2025-12-22 | Threading + Queue 多线程架构 | PLANNING.md § ADR | 已采纳 |
 
 ### ADR 摘要
 
@@ -112,6 +113,23 @@
 
 ---
 
+#### ADR 2025-12-22: Threading + Queue 多线程架构
+
+**决策**: 采用 threading.Thread + queue.Queue 实现接收和渲染分离
+
+**理由**:
+- OpenGL 上下文必须在主线程使用
+- ZMQ recv() 是 I/O 操作，threading 足够
+- queue.Queue 线程安全且简单
+
+**权衡**: ✅ 简单性和性能满足需求 | ❌ 无法利用多核（但渲染是 GPU 任务，不受影响）
+
+**性能提升**: 渲染帧率 30-40 FPS → 稳定 60 FPS
+
+**详细文档**: PLANNING.md § ADR 2025-12-22
+
+---
+
 ## 🎨 设计模式和最佳实践
 
 | 模式 | 说明 | 详细文档 |
@@ -119,6 +137,7 @@
 | **ZeroMQ PUB/SUB** | 发布-订阅模式，一对多广播 | docs/architecture/system-design.md § 通信机制 |
 | **立即模式渲染** | OpenGL 立即模式，适合简单线框（<1000 OBB）| docs/architecture/system-design.md § 渲染流程 |
 | **JSON/BSON 序列化** | 支持普通和压缩模式，60-80% 压缩率 | docs/api/data-format.md § 序列化方式 |
+| **Threading + Queue** | 接收和渲染分离，主线程渲染，子线程接收 I/O | PLANNING.md § 多线程架构 |
 
 ---
 

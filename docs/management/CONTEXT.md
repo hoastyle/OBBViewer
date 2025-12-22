@@ -1,19 +1,19 @@
 # CONTEXT.md
 
-**最后会话**: 2025-12-23 (多线程架构实现完成)
-**Git 基准**: commit 6d3c1db
+**最后会话**: 2025-12-23 (实时 FPS 显示完成)
+**Git 基准**: commit a6ae9f8
 
 ## 📍 上下文指针 (Context Pointers)
 
 ### 当前工作焦点
-- **已完成**: 实现 recvOBB.py 多线程架构（接收和渲染分离）✅
+- **已完成**: 添加可视化模式实时 FPS 显示 ✅
 - **实现内容**:
-  - 多线程架构：主线程渲染 + 接收线程（I/O 操作不阻塞）
-  - queue.Queue(maxsize=10) 线程安全数据缓冲
-  - threading.Event() 优雅退出信号
-  - 60 FPS 稳定渲染目标已实现
-- **相关代码**: recvOBB.py § _receiver_thread_func(), _run_visualized()
-- **相关文档**: PLANNING.md § 多线程架构 (Line 57, 已更新实现状态)
+  - 实时 FPS 显示（每秒帧数）
+  - 已接收消息计数
+  - 窗口标题动态更新
+  - 性能监控功能
+- **相关代码**: recvOBB.py § _run_visualized() (Line 592-593)
+- **相关文档**: PLANNING.md § 多线程架构 (已验证 60 FPS 目标)
 
 ### 会话状态
 - **Git commits (本次会话)**: 2 commits (35d5ae1 → 6d3c1db)

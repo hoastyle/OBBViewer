@@ -588,6 +588,10 @@ class OBBReceiver:
                 # 控制帧率
                 clock.tick(60)
 
+                # 更新窗口标题显示 FPS
+                fps = clock.get_fps()
+                pygame.display.set_caption(f"OBB Receiver - FPS: {fps:.1f} | Messages: {self.msg_count}")
+
         except KeyboardInterrupt:
             pass
         finally:
