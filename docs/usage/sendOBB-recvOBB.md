@@ -1,14 +1,14 @@
 ---
 title: "sendOBB/recvOBB 用户指南"
-description: "参考 LCPS 实现的 OBB 发送/接收独立程序，支持完整参数解析、帮助信息、压缩模式和 3D 可视化"
+description: "参考 LCPS 实现的 OBB 发送/接收独立程序，支持完整参数解析、帮助信息、压缩模式和 3D 可视化（已验证与 LCPS 100% 兼容）"
 type: "功能文档"
 status: "完成"
 priority: "高"
 created_date: "2025-12-22"
-last_updated: "2025-12-22"
+last_updated: "2025-12-22" # 更新：添加数据结构修复和颜色增强
 related_documents: ["docs/usage/quick-start.md", "docs/api/data-format.md"]
 related_code: ["sendOBB.cpp", "recvOBB.py", "CMakeLists.txt"]
-tags: ["可视化", "3D渲染", "PyOpenGL", "参数解析", "LCPS"]
+tags: ["可视化", "3D渲染", "PyOpenGL", "参数解析", "LCPS", "兼容性"]
 ---
 
 # sendOBB/recvOBB 用户指南
@@ -17,9 +17,24 @@ tags: ["可视化", "3D渲染", "PyOpenGL", "参数解析", "LCPS"]
 
 `sendOBB` 和 `recvOBB` 是参考 LCPS 项目实现的独立 OBB 数据发送/接收程序。
 
+**兼容性保证**：
+- ✅ **100% 兼容 LCPS 实现**：压缩模式数据格式与现场已投产的 LCPS 完全一致
+- ✅ **验证通过**：已与 `/home/hao/Workspace/MM/gitlab_iCrane/src/service/LCPS` 实现对比验证
+
 相比原有的 `sender` 和 `recv.py`:
 - **sendOBB.cpp**: 增强的 C++ 发送端，支持多种 OBB 类型（obs、sprWarn、sprStop 等）
 - **recvOBB.py**: 专用的 Python 接收端，专注 OBB 数据接收和显示
+
+**关键特性**:
+- 完整的命令行参数解析（-h, -m, -n, -a）
+- 内置帮助系统（--help）
+- 压缩模式支持（zlib + BSON，使用 `{"data": ...}` wrapper 确保兼容性）
+- **彩色可视化**：不同 OBB 类型用不同颜色区分
+  * obs → 青色 (Cyan)
+  * sprWarn → 黄色 (Yellow)
+  * sprStop → 洋红色 (Magenta)
+  * sprCntr → 橙色 (Orange)
+  * sprCntrWarn → 浅绿 (Light Green)
 
 ## 编译 sendOBB
 
