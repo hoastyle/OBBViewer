@@ -1,36 +1,33 @@
 # CONTEXT.md
 
-**最后会话**: 2025-12-22 18:45
-**Git 基准**: commit 94b90af
+**最后会话**: 2025-12-22 18:50
+**Git 基准**: commit 098c1c3
 
 ## 📍 上下文指针 (Context Pointers)
 
 ### 当前工作焦点
 - **已完成**: 修复 sendOBB 数据结构与 LCPS 设计一致 ✅
-- **已完成**: 为不同 OBB 类型设置不同的颜色 ✅
-- **相关代码**: sendOBB.cpp § generateTestOBBs(), recvOBB.py § 颜色映射
+- **已验证**: 颜色方案确认为基于 collision_status（非对象类型）✅
+- **相关代码**: sendOBB.cpp § generateTestOBBs(), recvOBB.py
 - **相关文档**: docs/usage/sendOBB-recvOBB.md, KNOWLEDGE.md
 - **相关架构**: PLANNING.md § 技术栈、ADR 2025-12-20 (ZMQ/压缩)
 
 ### 会话状态
-- **Git commits (本次会话)**: 3 commits (a0d13b3 → 94b90af)
+- **Git commits (本次会话)**: 5 commits (a0d13b3 → 098c1c3)
 - **修改文件数**: 2 files (sendOBB.cpp, recvOBB.py)
-- **主要变更领域**: 架构修复、可视化增强
+- **主要变更领域**: 架构修复、理解确认
 
 ### 工作成果摘要
 - 🔧 **架构修复**:
   - 原设计（错误）：1 obs + N sprWarn
   - 新设计（正确）：N obs + 1 sprWarn（与 LCPS 一致）
   - obs 各有不同位置和尺寸，不再重叠
-- ✅ **验证**: 3 obs 各有不同的位置和尺寸
-- 🎨 **可视化增强**:
-  - obs → 青色 (Cyan)
-  - sprWarn → 黄色 (Yellow)
-  - sprStop → 洋红色 (Magenta)
-  - sprCntr → 橙色 (Orange)
-  - sprCntrWarn → 浅绿 (Light Green)
-  - 碰撞状态：颜色调暗到 60%
-- 📖 **文本输出**: 添加彩色符号和颜色描述信息
+- ✅ **验证**: 3 obs 各有不同的位置和尺寸，与 LCPS 生产实现一致
+- 🎨 **颜色方案确认**:
+  - 仅基于 collision_status 决定颜色
+  - 安全状态 → 绿色 (collision_status = 0)
+  - 碰撞状态 → 红色 (collision_status = 1)
+  - 与 LCPS 实现保持一致
 
 ### 下次启动时
 - **推荐命令**: `/wf_03_prime`
