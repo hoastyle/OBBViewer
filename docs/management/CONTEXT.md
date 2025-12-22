@@ -1,25 +1,28 @@
 # CONTEXT.md
 
-**最后会话**: 2025-12-22 17:09
-**Git 基准**: commit a0d13b3
+**最后会话**: 2025-12-22 18:30
+**Git 基准**: commit a3a037c
 
 ## 📍 上下文指针 (Context Pointers)
 
 ### 当前工作焦点
-- **已完成**: sendOBB/recvOBB 高级程序实现（任务 10） ✅
+- **已完成**: 修复 sendOBB 数据结构与 LCPS 设计一致 ✅
+- **相关代码**: sendOBB.cpp § generateTestOBBs()
 - **相关文档**: docs/usage/sendOBB-recvOBB.md, docs/management/TASK.md § 任务 10
 - **相关架构**: PLANNING.md § 技术栈、ADR 2025-12-20 (ZMQ/压缩)
 
 ### 会话状态
-- **Git commits (本次会话)**: 1 commit (a0d13b3)
-- **修改文件数**: 5 files
-- **主要变更领域**: 功能实现、集成测试、文档
+- **Git commits (本次会话)**: 2 commits (a0d13b3 → a3a037c)
+- **修改文件数**: 1 file (sendOBB.cpp)
+- **主要变更领域**: 架构修复
 
 ### 工作成果摘要
-- 🚀 **代码**: sendOBB.cpp (420行) + recvOBB.py (220行)
-- ✅ **测试**: 普通/压缩模式通过，16+ 消息验证无误
-- 📊 **性能**: 73% 压缩率，11.6 KB/s 带宽
-- 📖 **文档**: 完整用户指南 (360行 Markdown)
+- 🔧 **架构修复**:
+  - 原设计（错误）：1 obs + N sprWarn
+  - 新设计（正确）：N obs + 1 sprWarn（与 LCPS 一致）
+  - obs 各有不同位置和尺寸，不再重叠
+- ✅ **验证**: 3 obs 各有不同的位置（[0,0,0], [3,0,0], [6,0,0]）和尺寸（[2,2,2], [2.5,2,2], [3,2,2]）
+- 📖 **文档**: 帮助文本、参数说明已更新
 
 ### 下次启动时
 - **推荐命令**: `/wf_03_prime`
