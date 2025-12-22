@@ -38,6 +38,9 @@ sudo apt-get install libzmq3-dev nlohmann-json3-dev
 
 # 初始化 Git Submodule (cppzmq)
 git submodule update --init --recursive
+
+# 注意：cppzmq 已固定到 v4.11.0
+# 版本管理详见 SUBMODULE_VERSION.md
 ```
 
 详细安装指南见 [开发环境配置](docs/development/setup.md)。

@@ -4,6 +4,8 @@ project(OBBDemo)
 set(CMAKE_CXX_STANDARD 17)
 
 # 使用 Git Submodule 管理 cppzmq
+# 禁用 cppzmq 测试，避免下载 Catch2（加速 CMake 配置 10-45秒 → <1秒）
+set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "Disable cppzmq tests" FORCE)
 add_subdirectory(thirdparty/cppzmq)
 
 # 查找 zlib 库（用于压缩模式）
