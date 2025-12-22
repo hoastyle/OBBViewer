@@ -1,6 +1,6 @@
 # OBBDemo 知识库
 
-**最后更新**: 2025-12-21
+**最后更新**: 2025-12-22
 
 本文档是项目的知识中心，索引所有架构决策、文档、设计模式和已知问题。
 
@@ -24,6 +24,7 @@
 | 数据格式 | docs/api/data-format.md | OBB 数据结构、ZMQ 消息格式 | 高 | 2025-12-20 |
 | 开发环境 | docs/development/setup.md | 环境配置、依赖安装、编译 | 高 | 2025-12-20 |
 | 快速开始 | docs/usage/quick-start.md | 安装、运行、基本使用 | 高 | 2025-12-20 |
+| ZMQ 通信指南 | docs/usage/sendOBB-recvOBB.md | 发送端/接收端通信、数据格式、模式匹配 | 高 | 2025-12-22 |
 | 部署指南 | docs/deployment/binary-release.md | PyInstaller 打包、二进制发布 | 中 | 2025-12-21 |
 
 ### 任务-文档关联
