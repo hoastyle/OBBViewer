@@ -339,6 +339,15 @@ class OBBReceiver:
         obbs_data = data["data"]
         self.obbs = []
 
+        # 颜色映射：根据对象类型设置不同的颜色
+        color_map = {
+            "obs": (0, 1, 1, 1),          # 青色 (Cyan) - 障碍物
+            "sprWarn": (1, 1, 0, 1),      # 黄色 (Yellow) - 警告区域
+            "sprStop": (1, 0, 1, 1),      # 洋红色 (Magenta) - 停止区域
+            "sprCntr": (1, 0.5, 0, 1),    # 橙色 (Orange) - 中心停止
+            "sprCntrWarn": (0.5, 1, 0, 1), # 浅绿 (Light Green) - 中心警告
+        }
+
         for obb_dict in obbs_data:
             obb = OBB(
                 obb_dict.get("type", "unknown"),
@@ -348,11 +357,17 @@ class OBBReceiver:
                 obb_dict.get("collision_status", 0)
             )
 
-            # 根据碰撞状态设置颜色
-            if obb.collision == 1:
-                obb.color = (1, 0, 0, 1)  # 红色（碰撞）
+            # 根据对象类型设置颜色
+            obb_type = obb.type.lower()
+            if obb_type in color_map:
+                obb.color = color_map[obb_type]
             else:
-                obb.color = (0, 1, 0, 1)  # 绿色（安全）
+                # 未知类型默认使用白色
+                obb.color = (1, 1, 1, 1)
+
+            # 如果有碰撞，调暗颜色（乘以 0.6）来表示碰撞状态
+            if obb.collision == 1:
+                obb.color = tuple(c * 0.6 if i < 3 else c for i, c in enumerate(obb.color))
 
             self.obbs.append(obb)
 
@@ -370,6 +385,15 @@ class OBBReceiver:
         obbs = data["data"]
         print(f"[{self.msg_count}] Received {len(obbs)} OBB(s):")
 
+        # 对象类型到符号和颜色描述的映射
+        type_info = {
+            "obs": ("🟦", "Obstacle (Cyan)"),
+            "sprWarn": ("🟨", "Warning Zone (Yellow)"),
+            "sprStop": ("🟪", "Stop Zone (Magenta)"),
+            "sprCntr": ("🟧", "Center Stop (Orange)"),
+            "sprCntrWarn": ("🟩", "Center Warning (Light Green)"),
+        }
+
         for i, obb in enumerate(obbs):
             obb_type = obb.get("type", "unknown")
             position = obb.get("position", [0, 0, 0])
@@ -379,12 +403,17 @@ class OBBReceiver:
 
             collision_status = "🔴 COLLISION" if collision == 1 else "🟢 SAFE"
 
-            print(f"  OBB {i+1}:")
-            print(f"    Type: {obb_type}")
-            print(f"    Position: [{position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}]")
-            print(f"    Rotation: [w={rotation[0]:.2f}, x={rotation[1]:.2f}, y={rotation[2]:.2f}, z={rotation[3]:.2f}]")
-            print(f"    Size: [{size[0]:.2f}, {size[1]:.2f}, {size[2]:.2f}]")
-            print(f"    Status: {collision_status}")
+            # 获取对象类型的符号和描述
+            if obb_type.lower() in type_info:
+                symbol, desc = type_info[obb_type.lower()]
+            else:
+                symbol, desc = "⬜", f"Unknown ({obb_type})"
+
+            print(f"  [{i+1}] {symbol} Type: {desc}")
+            print(f"      Position: [{position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}]")
+            print(f"      Rotation: [w={rotation[0]:.2f}, x={rotation[1]:.2f}, y={rotation[2]:.2f}, z={rotation[3]:.2f}]")
+            print(f"      Size: [{size[0]:.2f}, {size[1]:.2f}, {size[2]:.2f}]")
+            print(f"      Status: {collision_status}")
 
         # 显示压缩率（如果是压缩模式）
         if self.use_compression and self.total_bytes_decompressed > 0:
