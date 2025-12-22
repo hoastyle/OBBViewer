@@ -181,6 +181,7 @@ class OBBReceiver:
         self.msg_count = 0
         self.total_bytes_received = 0
         self.total_bytes_decompressed = 0
+        self.type_counts = {}  # 类型统计 {type_name: count}
 
         # 可视化相关
         self.obbs = []  # 当前 OBB 列表
@@ -210,7 +211,15 @@ class OBBReceiver:
         message = self.subscriber.recv()
         self.total_bytes_received += len(message)
 
-        data = json.loads(message.decode('utf-8'))
+        try:
+            data = json.loads(message.decode('utf-8'))
+        except UnicodeDecodeError:
+            print("\n❌ 错误: 无法解码数据为 UTF-8")
+            print("可能原因: 发送端使用了压缩模式 (-m c)，但接收端使用了普通模式 (-m n)")
+            print("解决方案: 确保发送端和接收端的 -m 参数一致")
+            print("  示例: ./sendOBB -m n  配合  python recvOBB.py -a localhost:5555 -m n\n")
+            raise RuntimeError("模式不匹配: 接收端使用 normal mode，但数据似乎是压缩格式")
+
         return data
 
     def receive_compressed(self) -> Dict[str, Any]:
@@ -327,6 +336,20 @@ class OBBReceiver:
         glPopMatrix()
         pygame.display.flip()
 
+    def _update_type_statistics(self, data: Dict[str, Any]) -> None:
+        """更新 OBB 类型统计
+
+        Args:
+            data: 接收到的 OBB 数据字典
+        """
+        if not data or "data" not in data:
+            return
+
+        obbs_data = data["data"]
+        for obb_dict in obbs_data:
+            obb_type = obb_dict.get("type", "unknown")
+            self.type_counts[obb_type] = self.type_counts.get(obb_type, 0) + 1
+
     def _update_obbs_from_data(self, data: Dict[str, Any]) -> None:
         """从接收的数据更新 OBB 列表
 
@@ -335,6 +358,9 @@ class OBBReceiver:
         """
         if not data or "data" not in data:
             return
+
+        # 更新类型统计
+        self._update_type_statistics(data)
 
         obbs_data = data["data"]
         self.obbs = []
@@ -366,6 +392,9 @@ class OBBReceiver:
         if not data or "data" not in data:
             print(f"[{self.msg_count}] ❌ Invalid data format")
             return
+
+        # 更新类型统计
+        self._update_type_statistics(data)
 
         obbs = data["data"]
         print(f"[{self.msg_count}] Received {len(obbs)} OBB(s):")
@@ -404,16 +433,21 @@ class OBBReceiver:
         """运行文本模式（原有功能）"""
         try:
             while True:
-                # 接收数据
-                if self.use_compression:
-                    data = self.receive_compressed()
-                else:
-                    data = self.receive_normal()
+                try:
+                    # 接收数据
+                    if self.use_compression:
+                        data = self.receive_compressed()
+                    else:
+                        data = self.receive_normal()
 
-                # 显示数据
-                self.display_obb_data(data)
+                    # 显示数据
+                    self.display_obb_data(data)
 
-                self.msg_count += 1
+                    self.msg_count += 1
+
+                except zmq.error.Again:
+                    # 超时但无数据，继续等待
+                    pass
 
         except KeyboardInterrupt:
             print("\n\n=== 接收统计 ===")
@@ -424,6 +458,16 @@ class OBBReceiver:
                 if self.total_bytes_decompressed > 0:
                     compression_ratio = (1 - self.total_bytes_received / self.total_bytes_decompressed) * 100
                     print(f"Overall compression ratio: {compression_ratio:.1f}%")
+
+            # 显示类型统计
+            if self.type_counts:
+                print("\nOBB 类型统计:")
+                total_obbs = sum(self.type_counts.values())
+                for obb_type, count in sorted(self.type_counts.items()):
+                    percentage = (count / total_obbs * 100) if total_obbs > 0 else 0
+                    print(f"  {obb_type}: {count} ({percentage:.1f}%)")
+                print(f"  总计: {total_obbs}")
+
             print("=================")
             self.cleanup()
 
@@ -459,6 +503,16 @@ class OBBReceiver:
                         self._update_obbs_from_data(data)
                         self.msg_count += 1
 
+                        # 打印简洁的接收信息
+                        obbs = data.get("data", [])
+                        type_summary = {}
+                        for obb in obbs:
+                            obb_type = obb.get("type", "unknown")
+                            type_summary[obb_type] = type_summary.get(obb_type, 0) + 1
+
+                        summary_str = ", ".join([f"{t}:{c}" for t, c in sorted(type_summary.items())])
+                        print(f"[{self.msg_count}] Received {len(obbs)} OBB(s) - {summary_str}")
+
                 except zmq.Again:
                     pass  # 无数据可接收
 
@@ -479,6 +533,16 @@ class OBBReceiver:
                 if self.total_bytes_decompressed > 0:
                     compression_ratio = (1 - self.total_bytes_received / self.total_bytes_decompressed) * 100
                     print(f"Overall compression ratio: {compression_ratio:.1f}%")
+
+            # 显示类型统计
+            if self.type_counts:
+                print("\nOBB 类型统计:")
+                total_obbs = sum(self.type_counts.values())
+                for obb_type, count in sorted(self.type_counts.items()):
+                    percentage = (count / total_obbs * 100) if total_obbs > 0 else 0
+                    print(f"  {obb_type}: {count} ({percentage:.1f}%)")
+                print(f"  总计: {total_obbs}")
+
             print("=================")
             self.cleanup()
 
