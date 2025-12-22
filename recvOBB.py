@@ -4,6 +4,7 @@ OBB 数据接收器 (参考 recv.py 实现)
 
 接收 sendOBB.cpp 发送的 OBB 数据并显示
 支持普通模式和压缩模式 (zlib + BSON)
+支持可视化模式 (PyOpenGL + Pygame)
 """
 
 import argparse
@@ -11,43 +12,193 @@ import json
 import sys
 import time
 import zlib
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import bson
 import zmq
+import numpy as np
 
+# 可视化相关导入（可选）
+try:
+    import pygame
+    from pygame.math import Vector3
+    from pygame.locals import *
+    from OpenGL.GL import *
+    from OpenGL.GLU import *
+    VISUALIZATION_AVAILABLE = True
+except ImportError:
+    VISUALIZATION_AVAILABLE = False
+    print("⚠️ 可视化库未安装，将禁用可视化模式")
+    print("   安装方法: pip install pygame PyOpenGL")
+
+
+# ===== 可视化相关类和函数 =====
+
+class OBB:
+    """OBB 3D 对象（用于可视化）"""
+    def __init__(self, type, position, rotation, size, collision):
+        self.type = type
+        if VISUALIZATION_AVAILABLE:
+            self.position = Vector3(position)
+            self.size = Vector3(size)
+        else:
+            self.position = position
+            self.size = size
+        self.rotation = rotation
+        self.color = (1, 1, 1, 1)  # 默认白色
+        self.collision = collision
+
+
+def quaternion_to_matrix(q):
+    """四元数转旋转矩阵"""
+    w, x, y, z = q
+    r = [
+        1 - 2 * y * y - 2 * z * z,
+        2 * x * y - 2 * z * w,
+        2 * x * z + 2 * y * w,
+        0,
+        2 * x * y + 2 * z * w,
+        1 - 2 * x * x - 2 * z * z,
+        2 * y * z - 2 * x * w,
+        0,
+        2 * x * z - 2 * y * w,
+        2 * y * z + 2 * x * w,
+        1 - 2 * x * x - 2 * y * y,
+        0,
+        0,
+        0,
+        0,
+        1,
+    ]
+    return np.array(r).reshape(4, 4).T
+
+
+def draw_wire_cube(size=1.0, color=(1, 1, 1)):
+    """绘制线框立方体"""
+    if not VISUALIZATION_AVAILABLE:
+        return
+
+    half_size = size / 2
+    glBegin(GL_LINES)
+    glColor3f(*color)
+
+    # 前面
+    glVertex3f(-half_size, -half_size, half_size)
+    glVertex3f(half_size, -half_size, half_size)
+    glVertex3f(half_size, -half_size, half_size)
+    glVertex3f(half_size, half_size, half_size)
+    glVertex3f(half_size, half_size, half_size)
+    glVertex3f(-half_size, half_size, half_size)
+    glVertex3f(-half_size, half_size, half_size)
+    glVertex3f(-half_size, -half_size, half_size)
+
+    # 后面
+    glVertex3f(-half_size, -half_size, -half_size)
+    glVertex3f(half_size, -half_size, -half_size)
+    glVertex3f(half_size, -half_size, -half_size)
+    glVertex3f(half_size, half_size, -half_size)
+    glVertex3f(half_size, half_size, -half_size)
+    glVertex3f(-half_size, half_size, -half_size)
+    glVertex3f(-half_size, half_size, -half_size)
+    glVertex3f(-half_size, -half_size, -half_size)
+
+    # 连接前后面
+    glVertex3f(-half_size, -half_size, half_size)
+    glVertex3f(-half_size, -half_size, -half_size)
+    glVertex3f(half_size, -half_size, half_size)
+    glVertex3f(half_size, -half_size, -half_size)
+    glVertex3f(half_size, half_size, half_size)
+    glVertex3f(half_size, half_size, -half_size)
+    glVertex3f(-half_size, half_size, half_size)
+    glVertex3f(-half_size, half_size, -half_size)
+
+    glEnd()
+
+
+def draw_obb(obb):
+    """绘制 OBB"""
+    if not VISUALIZATION_AVAILABLE:
+        return
+
+    glPushMatrix()
+    glTranslatef(*obb.position)
+    rotation = obb.rotation.flatten()
+    glMultMatrixf(rotation)
+    glColor4f(*obb.color)
+    glScale(*obb.size)
+    draw_wire_cube(1.0, obb.color)
+    glPopMatrix()
+
+
+def draw_coordinate_system():
+    """绘制坐标系"""
+    if not VISUALIZATION_AVAILABLE:
+        return
+
+    glBegin(GL_LINES)
+    # X 轴 (红色)
+    glColor3f(1, 0, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(1, 0, 0)
+    # Y 轴 (绿色)
+    glColor3f(0, 1, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 1, 0)
+    # Z 轴 (蓝色)
+    glColor3f(0, 0, 1)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 0, 1)
+    glEnd()
+
+
+# ===== OBB 接收器类 =====
 
 class OBBReceiver:
     """OBB 数据接收器类"""
 
-    def __init__(self, address: str, mode: str):
+    def __init__(self, address: str, mode: str, visualize: bool = False):
         """
         初始化接收器
 
         Args:
             address: ZMQ 地址 (如 "localhost:5555")
             mode: 接收模式 ("normal" 或 "compressed")
+            visualize: 是否启用可视化模式
         """
         self.address = address
         self.mode = mode
         self.use_compression = (mode in ["compressed", "c"])
+        self.visualize = visualize and VISUALIZATION_AVAILABLE
 
         # 初始化 ZMQ
         self.context = zmq.Context()
         self.subscriber = self.context.socket(zmq.SUB)
         self.subscriber.connect(f"tcp://{address}")
         self.subscriber.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.subscriber.setsockopt(zmq.RCVTIMEO, 100)  # 100ms 超时
 
         # 统计信息
         self.msg_count = 0
         self.total_bytes_received = 0
         self.total_bytes_decompressed = 0
 
+        # 可视化相关
+        self.obbs = []  # 当前 OBB 列表
+        self.rotation = [0.0, 0.0]  # 视角旋转
+        self.scale = [1.0]  # 缩放
+        self.dragging = False
+        self.last_pos = (0, 0)
+
         print("=== OBB Receiver (参考 recv.py 实现) ===")
         print(f"Mode: {'compressed (BSON + zlib)' if self.use_compression else 'normal (JSON)'}")
+        print(f"Visualize: {'enabled (PyOpenGL)' if self.visualize else 'disabled (text only)'}")
         print(f"Subscribing to: tcp://{address}")
         print("========================================")
         print()
+
+        # 初始化可视化环境
+        if self.visualize:
+            self._init_visualization()
 
     def receive_normal(self) -> Dict[str, Any]:
         """
@@ -97,6 +248,114 @@ class OBBReceiver:
             print(f"❌ BSON parsing error: {e}")
             return {}
 
+    def _init_visualization(self) -> None:
+        """初始化可视化环境（PyOpenGL + Pygame）"""
+        if not VISUALIZATION_AVAILABLE:
+            return
+
+        pygame.init()
+        display = (800, 600)
+        pygame.display.set_mode(display, DOUBLEBUF | OPENGL | RESIZABLE)
+        pygame.display.set_caption("OBB Receiver - Visualization Mode")
+
+        glEnable(GL_DEPTH_TEST)
+        glMatrixMode(GL_PROJECTION)
+        gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glTranslatef(0.0, 0.0, -5)
+
+    def _handle_events(self) -> bool:
+        """处理 Pygame 事件
+
+        Returns:
+            如果用户关闭窗口返回 False，否则返回 True
+        """
+        if not VISUALIZATION_AVAILABLE:
+            return True
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # 左键
+                    self.dragging = True
+                    self.last_pos = pygame.mouse.get_pos()
+                elif event.button == 4:  # 滚轮向上
+                    self.scale[0] *= 1.1
+                elif event.button == 5:  # 滚轮向下
+                    self.scale[0] /= 1.1
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    self.dragging = False
+            elif event.type == pygame.MOUSEMOTION:
+                if self.dragging:
+                    new_pos = pygame.mouse.get_pos()
+                    dx = new_pos[0] - self.last_pos[0]
+                    dy = new_pos[1] - self.last_pos[1]
+                    self.rotation[0] += dy * 0.5
+                    self.rotation[1] += dx * 0.5
+                    self.last_pos = new_pos
+            elif event.type == VIDEORESIZE:
+                glViewport(0, 0, event.w, event.h)
+                glMatrixMode(GL_PROJECTION)
+                glLoadIdentity()
+                gluPerspective(45, (event.w / event.h), 0.1, 50.0)
+                glMatrixMode(GL_MODELVIEW)
+        return True
+
+    def _render_scene(self) -> None:
+        """渲染 3D 场景"""
+        if not VISUALIZATION_AVAILABLE:
+            return
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glPushMatrix()
+
+        # 应用用户旋转和缩放
+        glScalef(self.scale[0], self.scale[0], self.scale[0])
+        glRotatef(self.rotation[0], 1, 0, 0)
+        glRotatef(self.rotation[1], 0, 1, 0)
+
+        # 绘制坐标系
+        draw_coordinate_system()
+
+        # 绘制所有 OBB
+        for obb in self.obbs:
+            draw_obb(obb)
+
+        glPopMatrix()
+        pygame.display.flip()
+
+    def _update_obbs_from_data(self, data: Dict[str, Any]) -> None:
+        """从接收的数据更新 OBB 列表
+
+        Args:
+            data: 接收到的 OBB 数据字典
+        """
+        if not data or "data" not in data:
+            return
+
+        obbs_data = data["data"]
+        self.obbs = []
+
+        for obb_dict in obbs_data:
+            obb = OBB(
+                obb_dict.get("type", "unknown"),
+                obb_dict.get("position", [0, 0, 0]),
+                quaternion_to_matrix(obb_dict.get("rotation", [1, 0, 0, 0])),
+                obb_dict.get("size", [1, 1, 1]),
+                obb_dict.get("collision_status", 0)
+            )
+
+            # 根据碰撞状态设置颜色
+            if obb.collision == 1:
+                obb.color = (1, 0, 0, 1)  # 红色（碰撞）
+            else:
+                obb.color = (0, 1, 0, 1)  # 绿色（安全）
+
+            self.obbs.append(obb)
+
     def display_obb_data(self, data: Dict[str, Any]) -> None:
         """
         显示接收到的 OBB 数据
@@ -136,6 +395,13 @@ class OBBReceiver:
 
     def run(self) -> None:
         """运行接收循环"""
+        if self.visualize:
+            self._run_visualized()
+        else:
+            self._run_text_mode()
+
+    def _run_text_mode(self) -> None:
+        """运行文本模式（原有功能）"""
         try:
             while True:
                 # 接收数据
@@ -161,6 +427,61 @@ class OBBReceiver:
             print("=================")
             self.cleanup()
 
+    def _run_visualized(self) -> None:
+        """运行可视化模式"""
+        if not VISUALIZATION_AVAILABLE:
+            print("❌ 可视化模式不可用，退回到文本模式")
+            self._run_text_mode()
+            return
+
+        print("🎨 可视化模式启动")
+        print("   - 左键拖动: 旋转视角")
+        print("   - 滚轮: 缩放")
+        print("   - ESC/关闭窗口: 退出")
+        print()
+
+        try:
+            clock = pygame.time.Clock()
+            running = True
+
+            while running:
+                # 处理事件
+                running = self._handle_events()
+
+                # 接收数据（非阻塞）
+                try:
+                    if self.use_compression:
+                        data = self.receive_compressed()
+                    else:
+                        data = self.receive_normal()
+
+                    if data:
+                        self._update_obbs_from_data(data)
+                        self.msg_count += 1
+
+                except zmq.Again:
+                    pass  # 无数据可接收
+
+                # 渲染场景
+                self._render_scene()
+
+                # 控制帧率
+                clock.tick(60)
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print("\n\n=== 接收统计 ===")
+            print(f"Total messages: {self.msg_count}")
+            print(f"Total bytes received: {self.total_bytes_received}")
+            if self.use_compression:
+                print(f"Total bytes decompressed: {self.total_bytes_decompressed}")
+                if self.total_bytes_decompressed > 0:
+                    compression_ratio = (1 - self.total_bytes_received / self.total_bytes_decompressed) * 100
+                    print(f"Overall compression ratio: {compression_ratio:.1f}%")
+            print("=================")
+            self.cleanup()
+
     def cleanup(self) -> None:
         """清理资源"""
         self.subscriber.close()
@@ -175,11 +496,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 普通模式
+  # 普通模式（文本输出）
   python3 recvOBB.py -a localhost:5555 -m n
 
-  # 压缩模式
+  # 压缩模式（文本输出）
   python3 recvOBB.py -a localhost:5555 -m c
+
+  # 可视化模式（3D 渲染）
+  python3 recvOBB.py -a localhost:5555 -m n -v
+
+  # 压缩模式 + 可视化
+  python3 recvOBB.py -a localhost:5555 -m c --visualize
         """
     )
 
@@ -196,10 +523,16 @@ def main():
         help="接收模式: n/normal (普通) 或 c/compressed (压缩, 默认: n)"
     )
 
+    parser.add_argument(
+        "-v", "--visualize",
+        action="store_true",
+        help="启用 3D 可视化模式 (需要 PyOpenGL 和 Pygame)"
+    )
+
     args = parser.parse_args()
 
     # 创建并运行接收器
-    receiver = OBBReceiver(args.address, args.mode)
+    receiver = OBBReceiver(args.address, args.mode, visualize=args.visualize)
     receiver.run()
 
 

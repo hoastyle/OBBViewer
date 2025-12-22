@@ -152,39 +152,107 @@ void sendOBB(zmq::socket_t& publisher, const std::vector<OBB>& obbs,
 }
 
 /**
+ * @brief 打印使用帮助信息
+ * @param program_name 程序名称
+ */
+void printUsage(const char* program_name) {
+    std::cout << "Usage: " << program_name << " [OPTIONS]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "OBB data sender using ZeroMQ (参考 LCPS 实现)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Options:" << std::endl;
+    std::cout << "  -h, --help              显示此帮助信息并退出" << std::endl;
+    std::cout << "  -m, --mode MODE         发送模式: n/normal (普通) 或 c/compressed (压缩)" << std::endl;
+    std::cout << "                          默认: normal" << std::endl;
+    std::cout << "  -n, --count NUM         生成的 sprWarn 类型 OBB 数量" << std::endl;
+    std::cout << "                          默认: 1 (总共发送 1 obs + NUM sprWarn)" << std::endl;
+    std::cout << "  -a, --address ADDR      ZMQ 绑定地址" << std::endl;
+    std::cout << "                          默认: *:5555" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Examples:" << std::endl;
+    std::cout << "  " << program_name << " -m n -n 3" << std::endl;
+    std::cout << "    普通模式，发送 4 个 OBB (1 obs + 3 sprWarn)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "  " << program_name << " -m c -n 5" << std::endl;
+    std::cout << "    压缩模式，发送 6 个 OBB (1 obs + 5 sprWarn)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "  " << program_name << " --mode compressed --count 10 --address *:6666" << std::endl;
+    std::cout << "    压缩模式，发送 11 个 OBB，绑定到端口 6666" << std::endl;
+    std::cout << std::endl;
+}
+
+/**
  * @brief 主函数
  */
 int main(int argc, char* argv[]) {
-    // 解析命令行参数
+    // 默认参数
     std::string mode = "normal";
-    int obb_count = 1;  // 默认生成 1 个 B 类型 OBB
+    int obb_count = 1;
+    std::string address = "*:5555";
 
+    // 解析命令行参数
     for (int i = 1; i < argc; i++) {
-        if (std::string(argv[i]) == "-m" && i + 1 < argc) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else if ((arg == "-m" || arg == "--mode") && i + 1 < argc) {
             mode = argv[i + 1];
             if (mode != "normal" && mode != "n" && mode != "compressed" && mode != "c") {
-                std::cerr << "Invalid mode. Use 'normal'/'n' or 'compressed'/'c'" << std::endl;
+                std::cerr << "❌ 错误: 无效的模式 '" << mode << "'" << std::endl;
+                std::cerr << "   使用 'normal'/'n' 或 'compressed'/'c'" << std::endl;
+                std::cerr << "   使用 --help 查看帮助信息" << std::endl;
                 return 1;
             }
             i++;
-        } else if (std::string(argv[i]) == "-c" && i + 1 < argc) {
-            obb_count = std::stoi(argv[i + 1]);
+        }
+        else if ((arg == "-n" || arg == "--count") && i + 1 < argc) {
+            try {
+                obb_count = std::stoi(argv[i + 1]);
+                if (obb_count < 0) {
+                    std::cerr << "❌ 错误: OBB 数量必须 >= 0" << std::endl;
+                    return 1;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "❌ 错误: 无效的数量 '" << argv[i + 1] << "'" << std::endl;
+                return 1;
+            }
             i++;
+        }
+        else if ((arg == "-a" || arg == "--address") && i + 1 < argc) {
+            address = argv[i + 1];
+            i++;
+        }
+        else {
+            std::cerr << "❌ 错误: 未知选项 '" << arg << "'" << std::endl;
+            std::cerr << "   使用 --help 查看帮助信息" << std::endl;
+            return 1;
         }
     }
 
     bool use_compression = (mode == "compressed" || mode == "c");
 
+    // 构建完整的 ZMQ 地址
+    std::string zmq_address = "tcp://" + address;
+
     std::cout << "=== OBB Sender (参考 LCPS 实现) ===" << std::endl;
     std::cout << "Mode: " << (use_compression ? "compressed (BSON + zlib)" : "normal (JSON)") << std::endl;
     std::cout << "OBB count: " << (obb_count + 1) << " (1 obs + " << obb_count << " sprWarn)" << std::endl;
-    std::cout << "Publishing to: tcp://*:5555" << std::endl;
+    std::cout << "Publishing to: " << zmq_address << std::endl;
     std::cout << "======================================" << std::endl;
 
     // 初始化 ZMQ
     zmq::context_t context(1);
     zmq::socket_t publisher(context, ZMQ_PUB);
-    publisher.bind("tcp://*:5555");
+    try {
+        publisher.bind(zmq_address);
+    } catch (const zmq::error_t& e) {
+        std::cerr << "❌ 错误: 无法绑定到 " << zmq_address << std::endl;
+        std::cerr << "   原因: " << e.what() << std::endl;
+        return 1;
+    }
 
     // 等待订阅者连接
     std::cout << "Waiting for subscribers..." << std::endl;
