@@ -30,32 +30,46 @@ struct OBB {
 };
 
 /**
- * @brief 生成测试用的 OBB 数据
- * @param count 生成 B 类型 OBB 的数量
+ * @brief 生成测试用的 OBB 数据 (参考 LCPS 实现)
+ * @param count 生成 obs (障碍物) 的数量
  * @return OBB 向量
+ *
+ * 数据结构（与 LCPS 一致）:
+ * - N × "obs" 类型：多个障碍物，各有不同的位置和尺寸
+ * - 1 × "sprWarn" 类型：单个警告区域
+ *
+ * 说明：
+ * - obs 数量由 count 参数控制（可以有多个）
+ * - sprWarn 是单个固定的警告区域
+ * - 所有 obs 应该有不同的位置和尺寸，避免重叠
  */
 std::vector<OBB> generateTestOBBs(int count) {
     std::vector<OBB> obbs;
 
-    // 生成 A 类型 OBB (大型静态障碍物)
-    obbs.push_back({
-        "obs",                          // type
-        {0.0, 0.0, 0.0},               // position
-        {1.0, 0.0, 0.0, 0.0},          // rotation (identity quaternion)
-        {5.0, 5.0, 5.0},               // size
-        0                               // collision_status
-    });
-
-    // 生成 B 类型 OBB (动态障碍物)
+    // 生成 N 个 obs (障碍物) - 各有不同的位置和尺寸（LCPS 设计）
     for (int i = 0; i < count; ++i) {
+        // 计算不同的位置（沿 X 轴分布）
+        double x_pos = (double)i * 3.0;
+        // 计算不同的尺寸（逐渐增大）
+        double size_scale = 2.0 + (double)i * 0.5;
+
         obbs.push_back({
-            "sprWarn",                  // type
-            {2.0, 2.0, 2.0},           // position
-            {1.0, 0.0, 0.0, 0.0},      // rotation
-            {1.0, 1.0, 1.0},           // size
-            i % 2                       // collision_status (交替)
+            "obs",                                      // type: obstacle
+            {x_pos, 0.0, 0.0},                         // position: 沿 X 轴分布
+            {1.0, 0.0, 0.0, 0.0},                      // rotation: 恒等四元数
+            {size_scale, 2.0, 2.0},                    // size: 尺寸逐渐增大
+            0                                           // collision_status: 无碰撞
         });
     }
+
+    // 生成 1 个单一的 sprWarn (警告区域) - LCPS 设计中 spr 只有一个
+    obbs.push_back({
+        "sprWarn",                                      // type: warning zone
+        {-2.0, 0.0, 0.0},                              // position: 固定位置
+        {1.0, 0.0, 0.0, 0.0},                          // rotation: 恒等四元数
+        {1.0, 1.0, 1.0},                               // size: 固定尺寸
+        0                                               // collision_status
+    });
 
     return obbs;
 }
@@ -124,7 +138,9 @@ void sendOBB(zmq::socket_t& publisher, const std::vector<OBB>& obbs,
 
     if (use_compression) {
         // 压缩模式: JSON → BSON → zlib 压缩 → ZMQ 发送
-        std::vector<uint8_t> bson = json::to_bson(jsonSerializer);
+        // 注意：必须使用 wrapper 包装以与 LCPS 实现保持一致
+        json wrapper = {{"data", jsonSerializer}};
+        std::vector<uint8_t> bson = json::to_bson(wrapper);
         std::vector<uint8_t> compressed_bson = compressData(bson);
 
         zmq::message_t zmq_msg(compressed_bson.size());
@@ -160,24 +176,28 @@ void printUsage(const char* program_name) {
     std::cout << std::endl;
     std::cout << "OBB data sender using ZeroMQ (参考 LCPS 实现)" << std::endl;
     std::cout << std::endl;
+    std::cout << "Data structure (与 LCPS 一致):" << std::endl;
+    std::cout << "  - N × obs (障碍物): 各有不同的位置和尺寸" << std::endl;
+    std::cout << "  - 1 × sprWarn (警告区域): 单一固定区域" << std::endl;
+    std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -h, --help              显示此帮助信息并退出" << std::endl;
     std::cout << "  -m, --mode MODE         发送模式: n/normal (普通) 或 c/compressed (压缩)" << std::endl;
     std::cout << "                          默认: normal" << std::endl;
-    std::cout << "  -n, --count NUM         生成的 sprWarn 类型 OBB 数量" << std::endl;
-    std::cout << "                          默认: 1 (总共发送 1 obs + NUM sprWarn)" << std::endl;
+    std::cout << "  -n, --count NUM         生成的 obs (障碍物) 数量" << std::endl;
+    std::cout << "                          默认: 1 (总共发送 NUM obs + 1 sprWarn)" << std::endl;
     std::cout << "  -a, --address ADDR      ZMQ 绑定地址" << std::endl;
     std::cout << "                          默认: *:5555" << std::endl;
     std::cout << std::endl;
     std::cout << "Examples:" << std::endl;
     std::cout << "  " << program_name << " -m n -n 3" << std::endl;
-    std::cout << "    普通模式，发送 4 个 OBB (1 obs + 3 sprWarn)" << std::endl;
+    std::cout << "    普通模式，发送 4 个 OBB (3 obs + 1 sprWarn)" << std::endl;
     std::cout << std::endl;
     std::cout << "  " << program_name << " -m c -n 5" << std::endl;
-    std::cout << "    压缩模式，发送 6 个 OBB (1 obs + 5 sprWarn)" << std::endl;
+    std::cout << "    压缩模式，发送 6 个 OBB (5 obs + 1 sprWarn)" << std::endl;
     std::cout << std::endl;
     std::cout << "  " << program_name << " --mode compressed --count 10 --address *:6666" << std::endl;
-    std::cout << "    压缩模式，发送 11 个 OBB，绑定到端口 6666" << std::endl;
+    std::cout << "    压缩模式，发送 11 个 OBB (10 obs + 1 sprWarn)，绑定到端口 6666" << std::endl;
     std::cout << std::endl;
 }
 
@@ -239,7 +259,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "=== OBB Sender (参考 LCPS 实现) ===" << std::endl;
     std::cout << "Mode: " << (use_compression ? "compressed (BSON + zlib)" : "normal (JSON)") << std::endl;
-    std::cout << "OBB count: " << (obb_count + 1) << " (1 obs + " << obb_count << " sprWarn)" << std::endl;
+    std::cout << "OBB count: " << (obb_count + 1) << " (" << obb_count << " obs + 1 sprWarn)" << std::endl;
     std::cout << "Publishing to: " << zmq_address << std::endl;
     std::cout << "======================================" << std::endl;
 
