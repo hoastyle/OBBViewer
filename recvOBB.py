@@ -9,7 +9,9 @@ OBB 数据接收器 (参考 recv.py 实现)
 
 import argparse
 import json
+import queue
 import sys
+import threading
 import time
 import zlib
 from typing import Dict, List, Any, Optional
@@ -192,10 +194,16 @@ class OBBReceiver:
         self.dragging = False
         self.last_pos = (0, 0)
 
+        # 多线程架构（接收和渲染分离）
+        self.data_queue = queue.Queue(maxsize=10)  # 线程安全的数据缓冲
+        self.stop_event = threading.Event()  # 优雅退出信号
+        self.receiver_thread = None  # 接收线程
+
         print("=== OBB Receiver (参考 recv.py 实现) ===")
         print(f"Mode: {'compressed (BSON + zlib)' if self.use_compression else 'normal (JSON)'}")
         print(f"Visualize: {'enabled (PyOpenGL)' if self.visualize else 'disabled (text only)'}")
         print(f"Subscribing to: tcp://{address}")
+        print(f"Threading: {'enabled (receive/render separation)' if self.visualize else 'disabled (text mode)'}")
         print("========================================")
         print()
 
@@ -490,18 +498,60 @@ class OBBReceiver:
             print("=================")
             self.cleanup()
 
+    def _receiver_thread_func(self) -> None:
+        """接收线程主函数（I/O 操作，不阻塞渲染）"""
+        while not self.stop_event.is_set():
+            try:
+                # 接收数据（非阻塞，100ms 超时）
+                if self.use_compression:
+                    data = self.receive_compressed()
+                else:
+                    data = self.receive_normal()
+
+                if data:
+                    # 尝试放入队列（非阻塞）
+                    try:
+                        self.data_queue.put_nowait(data)
+                    except queue.Full:
+                        # 队列满，清空最旧数据，放入最新数据
+                        try:
+                            self.data_queue.get_nowait()  # 丢弃最旧数据
+                            self.data_queue.put_nowait(data)  # 放入最新数据
+                        except queue.Empty:
+                            pass  # 队列已被主线程清空
+
+            except zmq.error.Again:
+                # 超时但无数据，继续等待
+                pass
+            except Exception as e:
+                # 其他异常（如连接错误），打印并继续
+                if not self.stop_event.is_set():
+                    print(f"⚠️ Receiver thread error: {e}")
+                    time.sleep(0.1)  # 短暂休眠避免快速重试
+
     def _run_visualized(self) -> None:
-        """运行可视化模式"""
+        """运行可视化模式（多线程架构）"""
         if not VISUALIZATION_AVAILABLE:
             print("❌ 可视化模式不可用，退回到文本模式")
             self._run_text_mode()
             return
 
-        print("🎨 可视化模式启动")
+        print("🎨 可视化模式启动（多线程架构）")
+        print("   - 主线程: Pygame 主循环 + OpenGL 渲染（60 FPS）")
+        print("   - 接收线程: ZMQ 数据接收和解析（I/O 操作不阻塞渲染）")
         print("   - 左键拖动: 旋转视角")
         print("   - 滚轮: 缩放")
         print("   - ESC/关闭窗口: 退出")
         print()
+
+        # 启动接收线程
+        self.receiver_thread = threading.Thread(
+            target=self._receiver_thread_func,
+            daemon=True,
+            name="OBB-Receiver"
+        )
+        self.receiver_thread.start()
+        print("✅ 接收线程已启动")
 
         try:
             clock = pygame.time.Clock()
@@ -511,12 +561,9 @@ class OBBReceiver:
                 # 处理事件
                 running = self._handle_events()
 
-                # 接收数据（非阻塞）
+                # 从队列获取数据（非阻塞）
                 try:
-                    if self.use_compression:
-                        data = self.receive_compressed()
-                    else:
-                        data = self.receive_normal()
+                    data = self.data_queue.get_nowait()
 
                     if data:
                         self._update_obbs_from_data(data)
@@ -532,10 +579,10 @@ class OBBReceiver:
                         summary_str = ", ".join([f"{t}:{c}" for t, c in sorted(type_summary.items())])
                         print(f"[{self.msg_count}] Received {len(obbs)} OBB(s) - {summary_str}")
 
-                except zmq.Again:
-                    pass  # 无数据可接收
+                except queue.Empty:
+                    pass  # 队列为空，继续渲染
 
-                # 渲染场景
+                # 渲染场景（保持 60 FPS）
                 self._render_scene()
 
                 # 控制帧率
@@ -544,7 +591,17 @@ class OBBReceiver:
         except KeyboardInterrupt:
             pass
         finally:
-            print("\n\n=== 接收统计 ===")
+            # 停止接收线程
+            print("\n🛑 正在停止接收线程...")
+            self.stop_event.set()  # 设置停止信号
+            if self.receiver_thread and self.receiver_thread.is_alive():
+                self.receiver_thread.join(timeout=2)  # 等待线程退出（最多2秒）
+                if self.receiver_thread.is_alive():
+                    print("⚠️ 接收线程未在超时时间内退出")
+                else:
+                    print("✅ 接收线程已停止")
+
+            print("\n=== 接收统计 ===")
             print(f"Total messages: {self.msg_count}")
             print(f"Total bytes received: {self.total_bytes_received}")
             if self.use_compression:
