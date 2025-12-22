@@ -182,6 +182,8 @@ class OBBReceiver:
         self.total_bytes_received = 0
         self.total_bytes_decompressed = 0
         self.type_counts = {}  # 类型统计 {type_name: count}
+        self.collision_count = 0  # 碰撞计数
+        self.safe_count = 0  # 安全计数
 
         # 可视化相关
         self.obbs = []  # 当前 OBB 列表
@@ -337,7 +339,7 @@ class OBBReceiver:
         pygame.display.flip()
 
     def _update_type_statistics(self, data: Dict[str, Any]) -> None:
-        """更新 OBB 类型统计
+        """更新 OBB 类型和碰撞状态统计
 
         Args:
             data: 接收到的 OBB 数据字典
@@ -347,8 +349,16 @@ class OBBReceiver:
 
         obbs_data = data["data"]
         for obb_dict in obbs_data:
+            # 统计类型
             obb_type = obb_dict.get("type", "unknown")
             self.type_counts[obb_type] = self.type_counts.get(obb_type, 0) + 1
+
+            # 统计碰撞状态
+            collision_status = obb_dict.get("collision_status", 0)
+            if collision_status == 1:
+                self.collision_count += 1
+            else:
+                self.safe_count += 1
 
     def _update_obbs_from_data(self, data: Dict[str, Any]) -> None:
         """从接收的数据更新 OBB 列表
@@ -468,6 +478,15 @@ class OBBReceiver:
                     print(f"  {obb_type}: {count} ({percentage:.1f}%)")
                 print(f"  总计: {total_obbs}")
 
+            # 显示碰撞状态统计
+            if self.collision_count > 0 or self.safe_count > 0:
+                total_status = self.collision_count + self.safe_count
+                print("\n碰撞状态统计:")
+                safe_pct = (self.safe_count / total_status * 100) if total_status > 0 else 0
+                collision_pct = (self.collision_count / total_status * 100) if total_status > 0 else 0
+                print(f"  🟢 安全: {self.safe_count} ({safe_pct:.1f}%)")
+                print(f"  🔴 碰撞: {self.collision_count} ({collision_pct:.1f}%)")
+
             print("=================")
             self.cleanup()
 
@@ -542,6 +561,15 @@ class OBBReceiver:
                     percentage = (count / total_obbs * 100) if total_obbs > 0 else 0
                     print(f"  {obb_type}: {count} ({percentage:.1f}%)")
                 print(f"  总计: {total_obbs}")
+
+            # 显示碰撞状态统计
+            if self.collision_count > 0 or self.safe_count > 0:
+                total_status = self.collision_count + self.safe_count
+                print("\n碰撞状态统计:")
+                safe_pct = (self.safe_count / total_status * 100) if total_status > 0 else 0
+                collision_pct = (self.collision_count / total_status * 100) if total_status > 0 else 0
+                print(f"  🟢 安全: {self.safe_count} ({safe_pct:.1f}%)")
+                print(f"  🔴 碰撞: {self.collision_count} ({collision_pct:.1f}%)")
 
             print("=================")
             self.cleanup()
