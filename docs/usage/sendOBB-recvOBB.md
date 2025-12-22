@@ -29,12 +29,9 @@ tags: ["可视化", "3D渲染", "PyOpenGL", "参数解析", "LCPS", "兼容性"]
 - 完整的命令行参数解析（-h, -m, -n, -a）
 - 内置帮助系统（--help）
 - 压缩模式支持（zlib + BSON，使用 `{"data": ...}` wrapper 确保兼容性）
-- **彩色可视化**：不同 OBB 类型用不同颜色区分
-  * obs → 青色 (Cyan)
-  * sprWarn → 黄色 (Yellow)
-  * sprStop → 洋红色 (Magenta)
-  * sprCntr → 橙色 (Orange)
-  * sprCntrWarn → 浅绿 (Light Green)
+- **彩色可视化**：基于碰撞状态的颜色区分
+  * 安全 (collision_status = 0) → 绿色 (Green)
+  * 碰撞 (collision_status = 1) → 红色 (Red)
 
 ## 编译 sendOBB
 
