@@ -8,6 +8,8 @@
 - **跨语言**: C++ 发送端 + Python 接收端
 - **3D 可视化**: 基于 PyOpenGL 的实时 3D 渲染
 - **数据压缩**: 支持 zlib + BSON 压缩，节省 60-80% 带宽
+- **性能监控**: 实时 HUD 显示 FPS、带宽、丢帧率等性能指标（基于 PyImGui）
+- **多线程架构**: 接收和渲染分离，保持稳定 60 FPS
 - **跨平台**: 支持 Linux 和 Windows
 
 ## 快速开始
@@ -68,7 +70,18 @@ python3 recv.py -a localhost:5555 -m n
 
 # 或使用压缩模式（需与 sender 模式匹配）
 python3 recv.py -a localhost:5555 -m c
+
+# 启动 recvOBB.py（支持性能 HUD）
+uv run python recvOBB.py -a localhost:5555 -m n -v
 ```
+
+**性能 HUD 使用**:
+- 启动后自动显示性能监控窗口
+- 按 `F1` 键切换 HUD 显示/隐藏
+- 实时显示：
+  - FPS (当前/平均/最小/最大) + 曲线图
+  - 带宽 (KB/s) + 曲线图
+  - 丢帧率百分比
 
 完整的快速开始指南见 [快速开始](docs/usage/quick-start.md)。
 

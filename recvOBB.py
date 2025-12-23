@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 import zlib
+from abc import ABC, abstractmethod
+from collections import deque
 from typing import Dict, List, Any, Optional
 
 import bson
@@ -32,6 +34,205 @@ except ImportError:
     VISUALIZATION_AVAILABLE = False
     print("⚠️ 可视化库未安装，将禁用可视化模式")
     print("   安装方法: pip install pygame PyOpenGL")
+
+# ImGui 相关导入（可选）
+try:
+    import imgui
+    from imgui.integrations.pygame import PygameRenderer
+    IMGUI_AVAILABLE = True
+except ImportError:
+    IMGUI_AVAILABLE = False
+    print("⚠️ ImGui 未安装，HUD 功能将不可用")
+    print("   安装方法: uv add 'imgui[pygame]'")
+
+
+# ===== 性能监控相关类 =====
+
+class PerformanceMetrics:
+    """性能指标收集器"""
+    def __init__(self):
+        self._metrics = {
+            'fps': deque(maxlen=60),  # 保留最近 60 帧
+            'latency': deque(maxlen=60),
+            'bandwidth': deque(maxlen=60),
+        }
+        self._frame_drops = 0
+        self._total_frames = 0
+        self._last_bandwidth_check = time.time()
+        self._bytes_since_last_check = 0
+
+    def update_fps(self, fps: float):
+        """更新 FPS"""
+        self._metrics['fps'].append(fps)
+        self._total_frames += 1
+
+    def update_bandwidth(self, bytes_received: int):
+        """更新带宽（每秒计算）"""
+        self._bytes_since_last_check += bytes_received
+        now = time.time()
+        if now - self._last_bandwidth_check >= 1.0:
+            bandwidth = self._bytes_since_last_check / (now - self._last_bandwidth_check)
+            self._metrics['bandwidth'].append(bandwidth)
+            self._bytes_since_last_check = 0
+            self._last_bandwidth_check = now
+
+    def record_frame_drop(self):
+        """记录丢帧"""
+        self._frame_drops += 1
+
+    def get_summary(self) -> dict:
+        """获取统计摘要"""
+        fps_list = list(self._metrics['fps'])
+        bw_list = list(self._metrics['bandwidth'])
+        return {
+            'fps_current': fps_list[-1] if fps_list else 0,
+            'fps_avg': sum(fps_list) / len(fps_list) if fps_list else 0,
+            'fps_min': min(fps_list) if fps_list else 0,
+            'fps_max': max(fps_list) if fps_list else 0,
+            'bandwidth_current': bw_list[-1] if bw_list else 0,
+            'frame_drop_rate': (self._frame_drops / self._total_frames * 100)
+                               if self._total_frames > 0 else 0,
+        }
+
+
+class HUDWidget(ABC):
+    """HUD 组件抽象基类"""
+    @abstractmethod
+    def render(self, imgui_module, metrics: PerformanceMetrics):
+        """渲染组件"""
+        pass
+
+    @abstractmethod
+    def get_name(self) -> str:
+        """组件名称"""
+        pass
+
+    def is_enabled(self) -> bool:
+        """是否启用"""
+        return True
+
+
+class FPSWidget(HUDWidget):
+    """FPS 监控组件"""
+    def get_name(self) -> str:
+        return "FPS Monitor"
+
+    def render(self, imgui_module, metrics):
+        stats = metrics.get_summary()
+        imgui_module.text(f"FPS: {stats['fps_current']:.1f} (avg: {stats['fps_avg']:.1f})")
+        imgui_module.text(f"Min: {stats['fps_min']:.1f} | Max: {stats['fps_max']:.1f}")
+
+        # FPS 曲线图
+        fps_values = list(metrics._metrics['fps'])
+        if fps_values:
+            imgui_module.plot_lines(
+                "",
+                np.array(fps_values, dtype=np.float32),
+                scale_min=0,
+                scale_max=120,
+                graph_size=(300, 80)
+            )
+
+
+class BandwidthWidget(HUDWidget):
+    """带宽监控组件"""
+    def get_name(self) -> str:
+        return "Bandwidth Monitor"
+
+    def render(self, imgui_module, metrics):
+        stats = metrics.get_summary()
+        bw_kbps = stats['bandwidth_current'] / 1024
+        imgui_module.text(f"Bandwidth: {bw_kbps:.1f} KB/s")
+
+        # 带宽曲线
+        bw_values = [v / 1024 for v in list(metrics._metrics['bandwidth'])]
+        if bw_values:
+            imgui_module.plot_lines(
+                "",
+                np.array(bw_values, dtype=np.float32),
+                scale_min=0,
+                graph_size=(300, 80)
+            )
+
+
+class FrameDropWidget(HUDWidget):
+    """丢帧监控组件"""
+    def get_name(self) -> str:
+        return "Frame Drops"
+
+    def render(self, imgui_module, metrics):
+        stats = metrics.get_summary()
+        imgui_module.text(f"Frame Drop Rate: {stats['frame_drop_rate']:.1f}%")
+        imgui_module.text(f"Total Drops: {metrics._frame_drops}")
+
+
+class HUDManager:
+    """HUD 管理器 - 支持插件化"""
+    def __init__(self, metrics: PerformanceMetrics):
+        self.metrics = metrics
+        self.widgets = []
+        self.visible = True
+        self.renderer = None
+
+        # 初始化 ImGui（延迟到 Pygame 初始化之后）
+        if IMGUI_AVAILABLE:
+            imgui.create_context()
+            self.renderer = PygameRenderer()
+
+    def register_widget(self, widget: HUDWidget):
+        """注册 HUD 组件"""
+        self.widgets.append(widget)
+
+    def toggle_visibility(self):
+        """切换显示/隐藏"""
+        self.visible = not self.visible
+
+    def process_event(self, event):
+        """处理事件"""
+        if self.renderer:
+            self.renderer.process_event(event)
+
+    def render(self):
+        """渲染 HUD"""
+        if not self.visible or not IMGUI_AVAILABLE or not self.renderer:
+            return
+
+        try:
+            # 🔧 FIX: 显式设置 DisplaySize 避免 ImGui 断言错误
+            io = imgui.get_io()
+            surface = pygame.display.get_surface()
+            if surface is None:
+                return
+
+            display_size = surface.get_size()
+            if display_size[0] <= 0 or display_size[1] <= 0:
+                return
+
+            io.display_size = display_size
+
+            imgui.new_frame()
+
+            # 创建 HUD 窗口
+            imgui.begin("Performance HUD", True,
+                        imgui.WINDOW_NO_RESIZE | imgui.WINDOW_ALWAYS_AUTO_RESIZE)
+
+            # 渲染所有已注册的组件
+            for widget in self.widgets:
+                if widget.is_enabled():
+                    imgui.text(f"--- {widget.get_name()} ---")
+                    widget.render(imgui, self.metrics)
+                    imgui.separator()
+
+            imgui.end()
+
+            # 提交渲染
+            imgui.render()
+            self.renderer.render(imgui.get_draw_data())
+
+        except Exception as e:
+            print(f"⚠️ HUD rendering error: {e}")
+            # 降级：禁用 HUD 避免重复崩溃
+            self.visible = False
 
 
 # ===== 可视化相关类和函数 =====
@@ -211,6 +412,17 @@ class OBBReceiver:
         if self.visualize:
             self._init_visualization()
 
+            # 初始化性能监控和 HUD
+            self.metrics = PerformanceMetrics()
+            self.hud_manager = HUDManager(self.metrics)
+
+            # 注册 HUD 组件
+            self.hud_manager.register_widget(FPSWidget())
+            self.hud_manager.register_widget(BandwidthWidget())
+            self.hud_manager.register_widget(FrameDropWidget())
+
+            print("✅ Performance HUD initialized (Press F1 to toggle)")
+
     def receive_normal(self) -> Dict[str, Any]:
         """
         接收普通模式数据 (JSON)
@@ -294,8 +506,17 @@ class OBBReceiver:
             return True
 
         for event in pygame.event.get():
+            # ImGui 事件处理
+            if hasattr(self, 'hud_manager') and self.hud_manager:
+                self.hud_manager.process_event(event)
+
             if event.type == pygame.QUIT:
                 return False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F1:  # F1 切换 HUD
+                    if hasattr(self, 'hud_manager'):
+                        self.hud_manager.toggle_visibility()
+                        print(f"HUD {'enabled' if self.hud_manager.visible else 'disabled'}")
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 左键
                     self.dragging = True
@@ -344,6 +565,11 @@ class OBBReceiver:
             draw_obb(obb)
 
         glPopMatrix()
+
+        # 渲染 HUD（在 flip 之前）
+        if hasattr(self, 'hud_manager') and self.hud_manager:
+            self.hud_manager.render()
+
         pygame.display.flip()
 
     def _update_type_statistics(self, data: Dict[str, Any]) -> None:
@@ -569,6 +795,11 @@ class OBBReceiver:
                         self._update_obbs_from_data(data)
                         self.msg_count += 1
 
+                        # 更新带宽指标
+                        if hasattr(self, 'metrics'):
+                            bytes_received = len(str(data))  # 粗略估算
+                            self.metrics.update_bandwidth(bytes_received)
+
                         # 打印简洁的接收信息
                         obbs = data.get("data", [])
                         type_summary = {}
@@ -588,8 +819,10 @@ class OBBReceiver:
                 # 控制帧率
                 clock.tick(60)
 
-                # 更新窗口标题显示 FPS
+                # 更新窗口标题和性能指标
                 fps = clock.get_fps()
+                if hasattr(self, 'metrics'):
+                    self.metrics.update_fps(fps)
                 pygame.display.set_caption(f"OBB Receiver - FPS: {fps:.1f} | Messages: {self.msg_count}")
 
         except KeyboardInterrupt:
