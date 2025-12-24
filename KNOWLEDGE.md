@@ -1,6 +1,6 @@
 # OBBDemo 知识库
 
-**最后更新**: 2025-12-22 (添加多线程架构 ADR)
+**最后更新**: 2025-12-24 (添加 LCPS 工具架构 ADR)
 
 本文档是项目的知识中心，索引所有架构决策、文档、设计模式和已知问题。
 
@@ -50,6 +50,7 @@
 | 2025-12-20 | 支持压缩模式 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-21 | 使用 Git Submodule 管理 cppzmq 依赖 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-22 | Threading + Queue 多线程架构 | PLANNING.md § ADR | 已采纳 |
+| **2025-12-24** | **LCPS 工具架构设计** | **[docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md)** | **✅ 已采纳** |
 
 ### ADR 摘要
 
@@ -130,6 +131,33 @@
 
 ---
 
+#### ADR 2025-12-24: LCPS 工具架构设计
+
+**决策**: 为 LCPS 安全系统设计分层观测和调试工具架构（LiveMonitor + DataRecorder + OfflineDebugger）
+
+**核心决策** (共 4 个):
+1. **分层架构**: 实时观测 + 数据录制 + 离线调试分离
+2. **HDF5 数据格式**: 使用 HDF5 + zstd 压缩录制完整数据
+3. **点云下采样**: 实时传输下采样点云（1/10），完整数据本地录制
+4. **Python 先行**: 先 Python MVP 验证（8周），再 C++ QT 生产版（6周）
+
+**理由**:
+- ✅ 职责分离（实时性 vs 完整性）
+- ✅ 非侵入性（不影响 LCPS 主功能）
+- ✅ 快速验证（Python 2周 MVP）
+- ✅ 性能优化（C++ QT 最终版本）
+
+**权衡**:
+- ✅ 架构清晰、易维护
+- ⚠️ 组件数量增加（3层）
+- ⚠️ 需要迁移成本（Python → C++）
+
+**Ultrathink 评分**: 8.7/10（架构清晰 9/10、简洁性 8/10、可维护性 9/10）
+
+**详细文档**: [docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md) (完整 ADR，包含 4 个子决策)
+
+---
+
 ## 🎨 设计模式和最佳实践
 
 | 模式 | 说明 | 详细文档 |
@@ -138,6 +166,7 @@
 | **立即模式渲染** | OpenGL 立即模式，适合简单线框（<1000 OBB）| docs/architecture/system-design.md § 渲染流程 |
 | **JSON/BSON 序列化** | 支持普通和压缩模式，60-80% 压缩率 | docs/api/data-format.md § 序列化方式 |
 | **Threading + Queue** | 接收和渲染分离，主线程渲染，子线程接收 I/O | PLANNING.md § 多线程架构 |
+| **分层观测模式** | LiveMonitor（实时）+ DataRecorder（录制）+ OfflineDebugger（分析）| docs/adr/2025-12-24-lcps-tool-architecture.md |
 
 ---
 
