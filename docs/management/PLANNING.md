@@ -119,88 +119,130 @@ pygame.display.flip()
 **状态**: 📋 规划中
 
 **设计目标**:
-- 实时观测 LCPS 防护状态（点云、OBB、系统状态）
+- 实时观测 LCPS 防护状态（点云、OBB、系统状态、图像）
 - 问题定位和调试（漏报、误报检测）
 - 数据录制和回放（完整场景恢复）
+- 可扩展性（插件化架构，不修改代码即可扩展观测维度）
 - 非侵入性设计（不影响 LCPS 主功能）
 
-**分层架构设计**:
+**完整 ADR 文档**: [ADR v2.0: LCPS 观测和调试工具架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md)
+
+#### 4 层分层架构设计
+
+基于 ADR-001 的决策，采用分层架构模式（Layered Architecture Pattern）：
 
 ```
                     ZMQ PUB/SUB (多端口)
 LCPS System ──────────────────────────────┐
-  │ :5555 OBB                             │
-  │ :5556 PointCloud (下采样，可选)       │
+  │ :5555 OBB (always)                    │
+  │ :5556 PointCloud (downsampled)        │
   │ :5557 Status                          │
-  │ :5558 Image (可选)                    │
+  │ :5558 Image (optional)                │
                                           │
                                           v
               ┌───────────────────────────────────┐
-              │  Multi-Source Receiver (Threads)  │
-              │  - OBBReceiver                    │
-              │  - PointCloudReceiver (新增)      │
-              │  - StatusReceiver (新增)          │
-              │  - ImageReceiver (新增，可选)     │
+              │  Layer 1: Data Acquisition        │
+              │  - MultiChannelReceiver           │
+              │  - OBB/PC/Status/Image Channels   │
               └─────────────┬─────────────────────┘
-                            │ Queue (时间戳对齐)
-                            v
-              ┌───────────────────────────────────┐
-              │      Main Thread                  │
-              │  ┌─────────────────────────────┐  │
-              │  │  Data Synchronizer          │  │ ← 时间戳对齐
-              │  └─────────────────────────────┘  │
-              │  ┌─────────────────────────────┐  │
-              │  │  Data Recorder (HDF5+zstd)  │  │ ← 可选录制
-              │  └─────────────────────────────┘  │
-              │  ┌─────────────────────────────┐  │
-              │  │  Visualizer (OpenGL)        │  │ ← 3D渲染
-              │  └─────────────────────────────┘  │
-              │  ┌─────────────────────────────┐  │
-              │  │  HUD Manager (ImGui)        │  │ ← 状态显示
-              │  └─────────────────────────────┘  │
-              └───────────────────────────────────┘
                             │
                             v
-                    User Interaction
-              (键盘、鼠标、时间轴控制)
+              ┌───────────────────────────────────┐
+              │  Layer 2: Data Processing         │
+              │  - DataSynchronizer               │
+              │  - DataRecorder (HDF5)            │
+              │  - DataReplayer                   │
+              └─────────────┬─────────────────────┘
+                            │
+                            v
+              ┌───────────────────────────────────┐
+              │  Layer 3: Analysis & Detection    │
+              │  - AnomalyDetector (插件化)        │
+              │  - PerformanceAnalyzer            │
+              └─────────────┬─────────────────────┘
+                            │
+                            v
+              ┌───────────────────────────────────┐
+              │  Layer 4: Visualization & UI      │
+              │  - Visualizer3D (OpenGL)          │
+              │  - HUDManager (ImGui)             │
+              └───────────────────────────────────┘
 ```
 
-**核心模块**:
+**层次职责**:
+- **Layer 1 (数据采集)**: 从多个 ZMQ 端口接收数据，数据解析和初步验证
+- **Layer 2 (数据处理)**: 时间戳同步、数据录制、回放控制
+- **Layer 3 (分析检测)**: 异常检测、性能分析、报告生成（插件化）
+- **Layer 4 (可视化)**: 3D 渲染、HUD 显示、用户交互
 
-1. **MultiSourceReceiver（多数据源接收器）**
+#### 插件化架构设计
+
+基于 ADR-005 的决策，采用插件化架构（Plugin Architecture Pattern）+ 配置文件驱动：
+
+**插件分类**（4 类）:
+1. **DataChannelPlugin**: 扩展数据源（新增 ZMQ 端口、自定义数据格式）
+2. **MonitorPlugin**: 实时监控和可视化（热力图、轨迹预测等）
+3. **AnalyzerPlugin**: 异常检测和分析（漏报/误报检测、性能分析）
+4. **ExporterPlugin**: 数据导出和格式转换（ML 数据集、KITTI 格式等）
+
+**内置插件** (8 个):
+- OBBChannel, PointCloudChannel, StatusChannel, ImageChannel（数据通道）
+- LiveMonitor, LifecycleMonitor（监控）
+- MissedAlertDetector, FalseAlarmDetector（分析）
+- HDF5Recorder, MLDatasetExporter（导出）
+
+**配置驱动**: 使用 `plugin_config.yaml` 控制插件启用/禁用和参数配置
+
+详细的插件开发指南见：[LCPS 插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md)
+
+#### 核心模块
+
+1. **MultiChannelReceiver（多通道接收器）** - Layer 1
    - 复用 recvOBB.py 的多线程架构
-   - 每个数据源独立线程
+   - 每个数据源独立线程（OBB、PointCloud、Status、Image）
    - 通过 Queue 传递到主线程
-   - 时间戳对齐机制
+   - 非阻塞发送（zmq.NOBLOCK）确保非侵入性
 
-2. **DataRecorder（数据录制器）**
-   - 格式：HDF5
-   - 压缩：zstd（快速、高压缩率）
-   - 索引：时间戳索引，支持快速跳转
-   - 功能：开始/停止录制、回放、导出
+2. **DataRecorder（数据录制器）** - Layer 2
+   - 格式：HDF5 + zstd 压缩（压缩率 ~74%）
+   - 文件结构：obb_data/, pointcloud_data/, status_data/, image_data/, metadata
+   - 随机访问：支持跳转到任意时间点（< 100ms）
+   - 异步写入：批量提交，定期 flush（每 100 帧）
 
-3. **Visualizer（可视化器）**
-   - 3D View：OBB + 点云渲染
-   - 状态面板：LCPS 状态、统计信息
-   - Timeline View（Phase 2）：时间轴控制
+3. **AnomalyDetector（异常检测器）** - Layer 3（插件化）
+   - 漏报检测：MissedAlertDetector（检测应报警未报警场景）
+   - 误报检测：FalseAlarmDetector（检测不应报警但报警场景）
+   - 生命周期监控：LifecycleMonitor（状态机异常检测）
+   - 可配置规则：danger_zones, threshold 等参数
 
-4. **DebugAnalyzer（调试分析器）**（Phase 2+）
-   - 帧对比工具
-   - 数据统计（点云密度、OBB 数量）
-   - 异常检测（漏报/误报规则）
-   - 导出分析报告
+4. **Visualizer3D（3D 可视化器）** - Layer 4
+   - OBB 渲染：线框立方体 + 颜色编码（类型、状态）
+   - 点云渲染：VBO 优化（支持 100,000+ 点/帧）
+   - 相机控制：FPS 相机、轨道相机
+   - 性能目标：稳定 30 FPS
 
-**技术决策** (详见 ADR):
-- [ADR-001: 分层架构](#adr-2025-12-24-001-lcps-分层架构)
-- [ADR-002: HDF5 数据格式](#adr-2025-12-24-002-hdf5-数据格式)
-- [ADR-003: 点云下采样策略](#adr-2025-12-24-003-点云下采样策略)
-- [ADR-004: Python 先行策略](#adr-2025-12-24-004-python-先行策略)
+5. **PluginManager（插件管理器）** - Layer 3
+   - 插件加载：根据 plugin_config.yaml 自动加载
+   - 生命周期管理：on_init, on_enable, on_disable, on_destroy
+   - 热加载：运行时加载/卸载插件（无需重启）
+   - 事件总线：插件间解耦通信
 
-**实现路线图**:
-- Phase 1 (MVP, 2周): OBB + 点云 + 录制
-- Phase 2 (调试功能, 3周): 回放 + 分析
-- Phase 3 (高级功能, 3周): 多视图 + 自动化分析
-- Phase 4 (C++ QT, 6周): 高性能生产版本
+#### 技术决策链接
+
+完整的决策背景、量化数据、Ultrathink 评分、替代方案分析和实施细节请参考：
+
+- [ADR-001: 4 层分层架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-1-分层架构设计)
+- [ADR-002: HDF5 数据格式](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-2-hdf5-数据格式)
+- [ADR-003: 点云下采样策略](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-3-点云下采样策略)
+- [ADR-004: Python 先行策略](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-4-python-先行策略)
+- [ADR-005: 插件化架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-5-插件化架构设计)
+
+#### 实现路线图
+
+- **Phase 1 (MVP, 2 周)**: 4 层架构实现 + OBB/点云/状态接收 + HDF5 录制
+- **Phase 2 (完整功能, 3 周)**: 插件系统 + 异常检测 + 回放和分析
+- **Phase 3 (高级功能, 3 周)**: 图像支持 + 多视图 + 自动化报告
+- **Phase 4 (C++ 迁移, 6 周)**: 高性能 C++ QT 版本
 
 ---
 
@@ -217,18 +259,25 @@ LCPS System ──────────────────────�
 
 #### Python 依赖
 
+**OBBDemo 基础功能**:
+
 | 库 | 版本 | 用途 |
 |---|------|------|
-| **pyzmq** | latest | ZeroMQ Python 绑定 |
-| **pygame** | latest | 窗口管理和事件循环 |
-| **PyOpenGL** | latest | OpenGL 3D 渲染 |
-| **numpy** | latest | 数值计算 |
-| **zlib** | 内置 | 数据压缩 |
-| **bson** | latest | 二进制序列化 |
-| **pympler** | latest | 内存分析（可选）|
-| **h5py** | latest | HDF5 文件读写（LCPS 工具）|
-| **zstandard** | latest | zstd 压缩（LCPS 工具）|
-| **imgui[pygame]** | latest | ImGui Python 绑定（已有）|
+| **pyzmq** | 27.1.0+ | ZeroMQ Python 绑定 |
+| **pygame** | 2.6.1+ | 窗口管理和事件循环 |
+| **PyOpenGL** | 3.1.10+ | OpenGL 3D 渲染 |
+| **numpy** | 2.4.0+ | 数值计算 |
+| **pymongo** | 4.15.5+ | BSON 序列化 |
+| **imgui[pygame]** | 2.0.0+ | ImGui Python 绑定 |
+
+**LCPS 观测工具扩展**:
+
+| 库 | 版本 | 用途 | ADR 引用 |
+|---|------|------|---------|
+| **h5py** | latest | HDF5 文件读写 | [ADR-002](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-2-hdf5-数据格式) |
+| **zstandard** | latest | zstd 压缩（74% 压缩率）| [ADR-002](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-2-hdf5-数据格式) |
+| **PyYAML** | latest | 插件配置文件解析 | [ADR-005](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-5-插件化架构设计) |
+| **open3d** | latest（可选）| 点云处理（下采样）| [ADR-003](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-3-点云下采样策略) |
 
 #### C++ 依赖
 
@@ -248,35 +297,237 @@ LCPS System ──────────────────────�
 
 ---
 
-## 开发标准
+## 开发工作流
+
+### Python 先行策略
+
+基于 [ADR-004](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-4-python-先行策略) 的决策：
+
+**Phase 1-3: Python 版本**（8 周）
+- 快速验证架构可行性
+- 复用现有 OBBViewer 代码（减少 50% 开发量）
+- 获得早期用户反馈
+- 性能满足调试需求
+
+**Phase 4: C++ QT 迁移**（6 周）
+- 渐进迁移：核心模块优先，UI 最后
+- Python 版本作为参考实现
+- 数据格式和通信协议保持一致
+- 性能提升 ≥ 5 倍
+
+**迁移顺序**:
+1. MultiChannelReceiver → C++ ZMQ 模块
+2. DataRecorder (HDF5) → C++ HDF5 模块
+3. 插件系统 → C++ 插件框架
+4. Visualizer → Qt3D/VTK
+5. 部署打包 → CMake + CPack
+
+### 构建和测试
+
+**Python 开发**:
+```bash
+# 安装依赖（推荐使用 uv）
+uv sync
+
+# 运行 OBBViewer
+uv run python LCPSViewer.py -a localhost:5555 -m n
+
+# 运行测试（待实现）
+uv run pytest tests/
+```
+
+**C++ 开发**:
+```bash
+# 构建
+mkdir build && cd build
+cmake ..
+make
+
+# 运行发送端
+./sender
+```
+
+**集成测试**:
+- 端到端测试：sender → receiver → 数据验证
+- 性能测试：帧率、延迟、带宽测试
+- 压力测试：大量 OBB、高频发送
+
+### 部署流程
+
+**Python 打包**（PyInstaller）:
+```bash
+uv sync --group dev
+uv run pyinstaller LCPSViewer.spec
+```
+
+**C++ 打包**（CMake + CPack，待实现）:
+```bash
+cd build
+cpack
+```
+
+---
+
+## 代码标准
 
 ### 代码规范
 
 **Python**:
 - 遵循 PEP 8 风格指南
-- 类名使用 CamelCase（如 `OBB`）
-- 函数名使用 snake_case（如 `draw_wire_cube`）
-- 使用类型注解（推荐）
+- 类名使用 CamelCase（如 `OBB`, `DataRecorder`）
+- 函数名使用 snake_case（如 `draw_wire_cube`, `sync_frames`）
+- 使用类型注解（推荐，特别是公共 API）
+- 文档字符串：使用 Google 风格
 
 **C++**:
-- 遵循 C++11 标准
-- 使用现代 C++ 特性（智能指针、lambda 等）
+- 遵循 C++11/17 标准
+- 使用现代 C++ 特性（智能指针、lambda、auto 等）
 - 变量名使用 camelCase
 - 类名使用 PascalCase
+- 避免裸指针，优先使用 `std::unique_ptr` / `std::shared_ptr`
+
+### 插件开发规范
+
+基于 [ADR-005](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-5-插件化架构设计)：
+
+**插件接口**:
+```python
+from abc import ABC, abstractmethod
+
+class IPlugin(ABC):
+    @abstractmethod
+    def get_metadata(self) -> Dict[str, Any]:
+        """返回插件元数据（名称、版本、依赖）"""
+        pass
+
+    @abstractmethod
+    def on_init(self, config: Dict[str, Any]):
+        """初始化插件（传入配置）"""
+        pass
+
+    # ... 其他生命周期方法
+```
+
+**插件命名**:
+- 文件名：`{category}_{name}.py`（如 `monitor_heatmap.py`）
+- 类名：`{Name}{Category}`（如 `HeatmapMonitor`）
+- 配置：`plugin_config.yaml`
+
+**插件文档**:
+- 必须提供 `get_metadata()` 返回描述信息
+- README.md 说明用途、配置参数、依赖
+- 代码注释清晰
+
+详细的插件开发 SDK 和示例见：[LCPS 插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md)
 
 ### 配置管理
 
 **网络配置**:
-- 默认端口: 5555
-- 默认协议: TCP
-- ZMQ 模式: PUB/SUB
-- 地址格式: `IP:PORT`（如 `localhost:5555`）
+- 默认端口：5555 (OBB), 5556 (PointCloud), 5557 (Status), 5558 (Image)
+- 默认协议：TCP
+- ZMQ 模式：PUB/SUB
+- 地址格式：`IP:PORT`（如 `localhost:5555`）
 
 **渲染配置**:
-- 默认分辨率: 800x600
-- 支持窗口缩放: ✅
-- 双缓冲: ✅
-- 透视投影: FOV 45°, near 0.1, far 50.0
+- 默认分辨率：800x600
+- 支持窗口缩放：✅
+- 双缓冲：✅
+- 透视投影：FOV 45°, near 0.1, far 50.0
+- 目标帧率：60 FPS (OBBViewer), 30 FPS (LCPS Tool)
+
+**HDF5 配置**:
+- 压缩算法：zstd（Python: gzip, C++: zstd）
+- 压缩级别：3（平衡速度和压缩率）
+- 分块大小：(1, K, 3) 按帧分块
+- Flush 频率：每 100 帧
+
+---
+
+## 测试策略
+
+### 单元测试
+
+**Python**:
+- 框架：pytest
+- 覆盖率目标：≥ 80%
+- 关键模块：DataRecorder, DataSynchronizer, PluginManager
+
+**C++**（待实现）:
+- 框架：Google Test
+- 覆盖率目标：≥ 70%
+
+### 集成测试
+
+**端到端测试**:
+- sender → receiver → 数据验证
+- 录制 → 回放 → 数据一致性检查
+- 插件加载 → 运行 → 卸载
+
+**性能测试**:
+- 帧率稳定性（60 FPS @ OBBViewer）
+- 延迟测试（< 100ms）
+- 内存泄漏检测（长时间运行）
+
+### 验证标准
+
+基于 ADR v2.0 的验证标准：
+
+**Layer 1（数据采集）**:
+- [ ] 延迟 < 100ms
+- [ ] 支持 4 个数据通道同时接收
+- [ ] 非阻塞发送不影响 LCPS
+
+**Layer 2（数据处理）**:
+- [ ] HDF5 录制不影响 Layer 1 帧率
+- [ ] 压缩率 ≥ 70%
+- [ ] 支持跳转到任意时间点（延迟 < 100ms）
+
+**Layer 3（分析检测）**:
+- [ ] 异常检测准确率 ≥ 90%
+- [ ] 插件故障隔离（一个插件崩溃不影响其他）
+
+**Layer 4（可视化）**:
+- [ ] 渲染稳定 30 FPS（LCPS Tool）
+- [ ] 60 FPS（OBBViewer）
+
+---
+
+## 性能目标
+
+### LCPS 观测工具性能指标
+
+基于 [ADR v2.0 性能测试结果](../adr/2025-12-24-lcps-tool-architecture-v2.md#性能测试结果)：
+
+**实时性**:
+- 端到端延迟：< 100ms
+- 渲染帧率：30 FPS（稳定）
+- 数据接收频率：30 Hz
+
+**带宽优化**:
+- 点云下采样：90% 带宽节省（36 MB/s → 3.6 MB/s）
+- HDF5 压缩：74% 压缩率（1 小时录制：86GB → 22GB）
+
+**数据处理**:
+- HDF5 写入延迟：< 10ms/帧（不影响实时渲染）
+- HDF5 读取延迟：< 5ms/帧
+- 时间轴跳转：< 100ms
+
+**资源占用**:
+- 内存使用：< 2GB（不含录制数据）
+- CPU 使用：< 50%（单核）
+- GPU 使用：< 30%
+
+### 扩展性目标
+
+**插件系统**:
+- 支持动态加载插件（无需重启）
+- 插件数量：≤ 20 个同时运行
+- 插件启动时间：< 1s
+
+**数据规模**:
+- OBB 数量：≤ 1000 个/帧
+- 点云点数：≤ 100,000 点/帧（完整），≤ 10,000 点/帧（下采样）
+- 录制时长：≤ 8 小时（单个 HDF5 文件）
 
 ---
 
@@ -418,130 +669,122 @@ LCPS System ──────────────────────�
 
 ---
 
-## LCPS 观测工具架构决策 (2025-12-24)
+## LCPS 观测工具架构决策摘要 (2025-12-24)
 
-**完整ADR文档**: [ADR v2.0: LCPS 观测和调试工具架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md)
+**完整 ADR 文档**: [ADR v2.0: LCPS 观测和调试工具架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md)
 
-以下是核心决策的摘要版本。完整的决策过程、量化数据、Ultrathink评分、替代方案分析和实施细节请参考上述ADR v2.0文档。
+**核心决策**（5 个）:
 
-### ADR 2025-12-24-001: LCPS 分层架构
+| ADR | 决策 | 核心收益 | Ultrathink 评分 |
+|-----|------|---------|----------------|
+| **ADR-001** | 4 层分层架构 | 职责清晰、可测试、可扩展 | 9/10 |
+| **ADR-002** | HDF5 + zstd | 74% 压缩率、随机访问 | 9/10 |
+| **ADR-003** | 点云下采样 | 90% 带宽优化 | 8/10 |
+| **ADR-004** | Python 先行 | 快速验证、降低风险 | 9/10 |
+| **ADR-005** | 插件化架构 | 70% 效率提升、40% 成本降低 | 10/10 |
 
-**背景**:
-LCPS 是安全关键系统，观测工具需要同时满足：
-- 实时观测需求（快速反馈）
-- 完整调试需求（详细数据）
-- 非侵入性（不影响 LCPS 主功能）
+**综合评分**: 9.0/10
 
-**决策**:
-采用分层架构而非单一"大而全"工具。
+以下是核心决策的摘要版本。完整的决策过程、量化数据、替代方案分析和实施细节请参考上述 ADR v2.0 文档。
 
-**理由**:
-- ✅ **职责清晰**: 实时观测和离线调试分离
-- ✅ **降低复杂度**: 每层功能聚焦，易于维护
-- ✅ **灵活扩展**: 可独立升级各层
-- ✅ **风险隔离**: 观测工具崩溃不影响 LCPS
+### ADR-001: 4 层分层架构
 
-**权衡**:
-- ✅ **简洁性**: 分层后每个组件更简单
-- ✅ **可维护性**: 模块化设计
-- ❌ **组件数量**: 增加了架构复杂度（但通过清晰的接口管理）
+**决策**: 采用分层架构（Layered Architecture Pattern）
 
-**实施**:
-- Layer 1: MultiSourceReceiver（实时数据接收）
-- Layer 2: DataRecorder（数据持久化）
-- Layer 3: Visualizer + DebugAnalyzer（观测和分析）
+**层次**:
+- Layer 1: Data Acquisition（数据采集）
+- Layer 2: Data Processing（数据处理和录制）
+- Layer 3: Analysis & Detection（分析检测，插件化）
+- Layer 4: Visualization & UI（可视化和交互）
 
-### ADR 2025-12-24-002: HDF5 数据格式
+**核心收益**:
+- 职责分离，每层功能聚焦
+- 风险隔离，观测工具崩溃不影响 LCPS
+- 灵活扩展，可独立升级各层
 
-**背景**:
-需要录制 LCPS 数据以支持离线调试和场景回放。
+**详细文档**: [ADR-001 完整决策](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-1-分层架构设计)
 
-**决策**:
-选择 HDF5 而非 ROS Bag、自定义二进制格式。
+### ADR-002: HDF5 数据格式
 
-**理由**:
-- ✅ **高性能**: 支持大数据量高效读写
-- ✅ **压缩支持**: 内置 GZIP/SZIP，可扩展 zstd
-- ✅ **Python 生态**: h5py 成熟稳定
-- ✅ **灵活**: 层次化数据组织，支持元数据
-- ✅ **无依赖**: 不需要 ROS 环境
-- ✅ **跨平台**: Linux/Windows/macOS 全支持
+**决策**: 选择 HDF5 + zstd 压缩作为数据录制格式
 
-**权衡**:
-- ❌ **需自己实现索引**: 无内置时间轴索引（但可用 dataset 实现）
-- ❌ **需自己实现回放逻辑**: 无现成播放器（但实现简单）
-- ✅ **灵活性高**: 完全控制数据格式和读写逻辑
+**关键指标**:
+- 压缩率：~74%（1 小时录制：86GB → 22GB）
+- 写入延迟：< 10ms/帧
+- 随机访问：跳转延迟 < 100ms
 
-**备选方案**:
-- ROS Bag: 功能强大但需要 ROS 环境，过重
-- 自定义二进制 + SQLite: 需要自己实现所有功能，维护成本高
-
-**实施**:
-```python
-# HDF5 文件结构
-/
-├─ obb_data/        (dataset, shape=(N, 10), compression='gzip')
-├─ pointcloud_data/ (dataset, shape=(N, M, 3), compression='zstd')
-├─ status_data/     (dataset, shape=(N, K), compression='gzip')
-├─ timestamps/      (dataset, shape=(N,), 索引)
-└─ metadata/        (attributes, 录制信息)
+**文件结构**:
+```
+lcps_recording.h5
+├─ obb_data/        (timestamps, positions, rotations, sizes, types)
+├─ pointcloud_data/ (timestamps, points, intensities)
+├─ status_data/     (timestamps, state, metrics)
+├─ image_data/      (timestamps, images) [可选]
+└─ metadata/        (recording_date, lcps_version, etc.)
 ```
 
-### ADR 2025-12-24-003: 点云下采样策略
+**详细文档**:
+- [ADR-002 完整决策](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-2-hdf5-数据格式)
+- [HDF5 格式规范](../design/LCPS_HDF5_FORMAT.md)
 
-**背景**:
-完整点云数据量巨大（单帧可能数十万点），实时传输会占用大量带宽，可能影响 LCPS 主功能。
+### ADR-003: 点云下采样策略
 
-**决策**:
-采用分级传输策略：
-- 实时观测：下采样点云（1/10 或更少）
-- 数据录制：完整点云（本地 HDF5）
-- 按需传输：调试时可请求完整点云
+**决策**: 实时观测使用下采样点云 + 本地录制完整点云
 
-**理由**:
-- ✅ **带宽优化**: 下采样减少 90% 数据量
-- ✅ **实时性**: 低延迟，满足实时观测需求
-- ✅ **完整性**: 通过录制保留完整数据
-- ✅ **非侵入**: 不影响 LCPS 发布性能
+**两模式策略**:
+- **实时观测模式**: Voxel Grid 下采样（~90% 数据减少）
+- **本地录制模式**: 完整点云存储到 HDF5
 
-**权衡**:
-- ❌ **实时观测细节损失**: 下采样可能丢失细节
-- ✅ **可接受**: 实时观测主要看趋势，细节调试时回放完整数据
+**关键指标**:
+- 带宽优化：36 MB/s → 3.6 MB/s（90% 节省）
+- 下采样算法：Voxel Grid（体素大小 0.1m）
+- 非阻塞发送：zmq.NOBLOCK 确保非侵入性
 
-**下采样方法**:
-- 空间下采样：Voxel Grid（体素网格）
-- 随机下采样：Random Sampling
-- 推荐：Voxel Grid（保留空间分布特征）
+**详细文档**:
+- [ADR-003 完整决策](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-3-点云下采样策略)
+- [数据协议规范](../design/LCPS_DATA_PROTOCOL.md)
 
-**实施**:
-- 下采样率：1/10（可配置）
-- 实时传输：~10,000 点/帧
-- 完整录制：~100,000 点/帧
+### ADR-004: Python 先行策略
 
-### ADR 2025-12-24-004: Python 先行策略
+**决策**: 先实现 Python MVP，验证后迁移到 C++ QT
 
-**背景**:
-LCPS 工具需要快速验证架构和功能，最终需要高性能 C++ QT 版本。
+**时间线**:
+- Phase 1-3: Python 版本（8 周）- 快速验证架构
+- Phase 4: C++ QT 迁移（6 周）- 高性能生产版本
 
-**决策**:
-先实现 Python 版本（MVP），验证成功后迁移到 C++ QT。
+**核心收益**:
+- 开发速度 ~3x C++
+- 复用现有代码（减少 50% 开发量）
+- 架构验证后迁移，降低风险
 
-**理由**:
-- ✅ **快速迭代**: Python 开发效率高，2周可完成 MVP
-- ✅ **风险降低**: 验证架构可行性，避免 C++ 重构成本
-- ✅ **复用现有**: 复用 recvOBB.py 的架构和代码
-- ✅ **团队熟悉**: Python 熟练度高，调试快速
-- ✅ **生态丰富**: h5py, zstd, ImGui 等库成熟
+**详细文档**:
+- [ADR-004 完整决策](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-4-python-先行策略)
+- [实施计划](../design/LCPS_IMPLEMENTATION_PLAN.md)
 
-**权衡**:
-- ❌ **迁移成本**: 需要 Python → C++ 迁移（4-6周）
-- ✅ **风险可控**: 架构验证后迁移，避免盲目重写
-- ✅ **性能足够**: Python 版本性能满足调试需求
+### ADR-005: 插件化架构设计
 
-**迁移计划**:
-1. Phase 1-3: Python MVP + 功能完善（8周）
-2. Phase 4: C++ QT 迁移 + 性能优化（6周）
-3. 并行维护：Python 快速原型，C++ 生产部署
+**决策**: 采用插件化架构 + 配置文件驱动
+
+**插件分类**（4 类）:
+1. DataChannelPlugin - 扩展数据源
+2. MonitorPlugin - 实时监控和可视化
+3. AnalyzerPlugin - 异常检测和分析
+4. ExporterPlugin - 数据导出和格式转换
+
+**核心收益**:
+- 开发效率提升 70%（新功能从 7 天 → 2 天）
+- 维护成本降低 40%（插件隔离降低回归测试负担）
+- 用户可自定义扩展（不修改核心代码）
+
+**内置插件**（8 个）:
+- OBBChannel, PointCloudChannel, StatusChannel, ImageChannel
+- LiveMonitor, LifecycleMonitor
+- MissedAlertDetector, FalseAlarmDetector
+- HDF5Recorder, MLDatasetExporter
+
+**详细文档**:
+- [ADR-005 完整决策](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-5-插件化架构设计)
+- [插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md)
 
 ---
 
@@ -698,7 +941,17 @@ LCPS 工具需要快速验证架构和功能，最终需要高性能 C++ QT 版�
 
 ---
 
-## 安全和隐私
+## 安全指南
+
+### 安全性考量
+
+**LCPS 作为安全关键系统的要求**:
+- ✅ **非侵入性设计**: 观测工具崩溃不影响 LCPS 主功能（zmq.NOBLOCK）
+- ✅ **故障隔离**: Layer 1-4 独立，单层失败不传播
+- ✅ **插件隔离**: 插件故障不影响核心系统
+- ⚠️ **性能保证**: 录制/分析不影响实时观测（< 100ms 延迟）
+
+### 数据安全
 
 **当前状态**:
 - ❌ 无认证机制
@@ -706,14 +959,27 @@ LCPS 工具需要快速验证架构和功能，最终需要高性能 C++ QT 版�
 - ❌ 无访问控制
 
 **适用场景**:
-- ✅ 本地调试
-- ✅ 可信网络环境
+- ✅ 本地调试（localhost）
+- ✅ 可信网络环境（内网）
 - ❌ 公网部署（不推荐）
 
 **改进方向**:
-- 添加 ZMQ CurveZMQ 加密
+- 添加 ZMQ CurveZMQ 加密（公钥/私钥认证）
 - 实现简单的 token 认证
-- 限制绑定地址（不使用 `*`）
+- 限制绑定地址（不使用 `*`，明确指定 IP）
+- HDF5 文件加密（可选，使用 AES）
+
+### 代码安全
+
+**插件安全**:
+- 插件代码审查（用户自定义插件需审查）
+- 沙箱执行（未来 C++ 版本考虑）
+- 资源限制（内存、CPU 使用限制）
+
+**依赖安全**:
+- 定期更新依赖库版本
+- 使用 `uv` 或 `pip-audit` 检查漏洞
+- 固定依赖版本（pyproject.toml）
 
 ---
 
@@ -721,19 +987,88 @@ LCPS 工具需要快速验证架构和功能，最终需要高性能 C++ QT 版�
 
 ### 官方文档
 
-- [ZeroMQ Guide](https://zguide.zeromq.org/)
-- [PyOpenGL Documentation](http://pyopengl.sourceforge.net/)
-- [Pygame Documentation](https://www.pygame.org/docs/)
+**通信和数据**:
+- [ZeroMQ Guide](https://zguide.zeromq.org/) - ZMQ 完整指南
+- [HDF5 User Guide](https://docs.hdfgroup.org/) - HDF5 官方文档
+- [zstd Documentation](https://facebook.github.io/zstd/) - zstd 压缩库
+
+**渲染和 UI**:
+- [PyOpenGL Documentation](http://pyopengl.sourceforge.net/) - OpenGL Python 绑定
+- [Pygame Documentation](https://www.pygame.org/docs/) - 游戏开发库
+- [Dear ImGui](https://github.com/ocornut/imgui) - 即时模式 GUI
+
+**点云处理**:
+- [Open3D Documentation](http://www.open3d.org/docs/) - 点云处理库
+- [PCL (Point Cloud Library)](https://pointclouds.org/) - C++ 点云库
 
 ### 相关项目
 
-- [cppzmq](https://github.com/zeromq/cppzmq) - ZeroMQ C++ 绑定
+**OBBDemo 依赖**:
+- [cppzmq](https://github.com/zeromq/cppzmq) - ZeroMQ C++ 头文件封装
 - [nlohmann/json](https://github.com/nlohmann/json) - Modern JSON for C++
+- [pyimgui](https://github.com/pyimgui/pyimgui) - ImGui Python 绑定
+
+**LCPS 工具参考**:
+- [ROS Bag](http://wiki.ros.org/rosbag) - ROS 数据录制工具（对比参考）
+- [PlotJuggler](https://github.com/facontidavide/PlotJuggler) - 时序数据可视化
+- [CloudCompare](https://www.cloudcompare.org/) - 点云查看和处理
+
+### 设计模式和架构
+
+- [Layered Architecture Pattern](https://martinfowler.com/bliki/PresentationDomainDataLayering.html) - Martin Fowler
+- [Plugin Architecture Pattern](https://www.enterpriseintegrationpatterns.com/) - 企业集成模式
+- [Event-Driven Architecture](https://martinfowler.com/articles/201701-event-driven.html) - 事件驱动架构
 
 ---
 
-**文档维护**: 此文档应在以下情况更新：
+## 相关文档索引
+
+### 管理文档（docs/management/）
+
+- **PLANNING.md**（本文档）- 项目架构和开发标准
+- [TASK.md](TASK.md) - 任务追踪和功能路线图
+- [CONTEXT.md](CONTEXT.md) - 会话上下文和工作进度
+- [KNOWLEDGE.md](../../KNOWLEDGE.md) - 知识库和文档索引
+
+### 架构决策记录（docs/adr/）
+
+- [ADR v2.0: LCPS 观测和调试工具架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md) - 5 个核心架构决策
+
+### 设计文档（docs/design/）
+
+**LCPS 观测工具设计**:
+- [LCPS 综合设计方案](../design/LCPS_COMPREHENSIVE_DESIGN.md) - 完整设计方案
+- [LCPS 插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md) - 插件开发 SDK
+- [LCPS 异常检测规范](../design/LCPS_ANOMALY_DETECTION.md) - 漏报/误报检测规则
+- [LCPS HDF5 格式规范](../design/LCPS_HDF5_FORMAT.md) - 数据存储格式
+- [LCPS 数据协议规范](../design/LCPS_DATA_PROTOCOL.md) - ZMQ 通信协议
+- [LCPS 实施计划](../design/LCPS_IMPLEMENTATION_PLAN.md) - Phase 1-4 实施细节
+
+### 技术文档（docs/）
+
+- [系统架构](../architecture/system-design.md) - OBBDemo 整体架构
+- [数据格式](../api/data-format.md) - OBB 数据结构
+- [开发指南](../development/setup.md) - 环境配置和构建
+- [用户手册](../usage/quick-start.md) - 安装和使用
+- [部署指南](../deployment/binary-release.md) - PyInstaller 打包
+
+---
+
+## 文档维护
+
+**此文档应在以下情况更新**:
 - 添加新的技术栈或依赖
-- 做出重大架构决策
+- 做出重大架构决策（新增 ADR）
 - 更新功能路线图
 - 修改开发规范
+- 性能目标调整
+- 安全策略变更
+
+**更新频率**:
+- 每次重大功能完成后
+- 每个 Phase 结束后
+- 重要架构决策后（同步更新 ADR）
+
+**文档所有者**: 架构团队
+
+**最后更新**: 2025-12-24（LCPS 观测工具架构设计集成）

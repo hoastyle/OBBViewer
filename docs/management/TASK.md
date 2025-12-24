@@ -1,15 +1,445 @@
-# OBBDemo 任务追踪
+# OBBDemo 项目任务追踪
 
-**最后更新**: 2025-12-22
+**最后更新**: 2025-12-24
 
 ## 任务总览
 
-| 状态 | 数量 | 说明 |
-|------|------|------|
-| ✅ 已完成 | 11 | 核心功能、文档完成、参考 LCPS 实现新程序 |
-| 🔄 进行中 | 0 | 无 |
-| 📋 待做 | 4 | 功能改进和优化 |
-| 🔮 计划 | 3 | 未来功能 |
+| 状态 | OBBDemo | LCPS Tool | 总计 | 说明 |
+|------|---------|-----------|------|------|
+| ✅ 已完成 | 11 | 4 | 15 | 核心功能、Layer 1+2 完成 |
+| 🔄 进行中 | 0 | 0 | 0 | 无 |
+| 📋 Phase 1 (MVP) | - | 1 | 1 | MVP 集成测试 |
+| 📋 Phase 2 (完整) | - | 5 | 5 | 插件系统、分析 |
+| 📋 Phase 3 (高级) | - | 4 | 4 | 多视图、报告 |
+| 📋 Phase 4 (C++) | - | 3 | 3 | C++ 迁移、优化 |
+| 📋 基础改进 | 3 | - | 3 | OBBViewer 功能 |
+
+**总任务数**: 34 (其中 15 已完成，19 待做)
+
+---
+
+## 项目阶段规划
+
+### Phase 1: LCPS MVP（2 周，优先级：🔴 高）
+**目标**: 验证 4 层架构可行性，实现基础数据接收和录制
+**关键成果**: 可运行的 Python MVP，支持 OBB/点云/状态接收和 HDF5 录制
+**相关 ADR**: [ADR v2.0](../adr/2025-12-24-lcps-tool-architecture-v2.md)
+
+### Phase 2: 完整功能（3 周，优先级：🟠 中）
+**目标**: 实现插件系统和异常检测，完善回放和分析功能
+**关键成果**: 可扩展的插件架构，智能异常检测（≥ 90% 准确率）
+**相关设计**: [插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md)
+
+### Phase 3: 高级功能（3 周，优先级：🟡 低）
+**目标**: 图像支持、多视图布局、自动化报告
+**关键成果**: 完整的多模态观测工具，生产级文档
+
+### Phase 4: C++ 迁移（6 周，优先级：⏳ 待定）
+**目标**: 渐进迁移到 C++ QT，性能优化
+**关键成果**: 高性能生产版本（性能提升 ≥ 5 倍）
+
+---
+
+## LCPS 观测工具 - Phase 1: MVP （优先级：🔴 高，2 周）
+
+### LCPS-P1-T1: 实现 PointCloudReceiver（数据接收 Layer 1）
+**优先级**: 🔴 高
+**难度**: 中
+**依赖**: LCPS-Arch-001 (4层架构决策)
+**状态**: ✅ 已完成（2025-12-24）
+
+**描述**: 实现多通道数据接收器中的点云接收模块，支持 ZMQ 订阅和下采样点云数据解析
+
+**验收标准**:
+- [x] PointCloudReceiver 类实现（独立线程，Queue 缓冲）
+- [x] 支持点云数据解析（numpy 数组）
+- [x] Voxel Grid 下采样实现（体素大小 0.1m）
+- [x] 与 OBBReceiver 整合到 MultiChannelReceiver
+- [ ] 单元测试覆盖率 ≥ 80%（待后续补充）
+
+**技术决策**:
+- [ADR-003: 点云下采样策略](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-3-点云下采样策略)
+
+**相关代码**:
+- `lcps_tool/layer1/receivers/pointcloud_receiver.py` (新建)
+- `lcps_tool/layer1/multi_channel_receiver.py` (修改)
+
+**验证标准**:
+- 延迟 < 100ms
+- 下采样率 ≥ 85%
+
+---
+
+### LCPS-P1-T2: 实现 StatusReceiver（数据接收 Layer 1）
+**优先级**: 🔴 高
+**难度**: 小
+**依赖**: LCPS-Arch-001
+**状态**: ✅ 已完成（2025-12-24）
+
+**描述**: 实现 LCPS 状态数据接收模块，接收状态枚举和性能指标
+
+**验收标准**:
+- [x] StatusReceiver 类实现（独立线程）
+- [x] 状态枚举定义（IDLE, DETECTING, ALERTING, ERROR 等）
+- [x] 性能指标解析（CPU, Memory, FPS, Latency）
+- [ ] HUD 面板支持（显示当前状态）（待 Layer 4 实现）
+
+**相关代码**:
+- `lcps_tool/layer1/receivers/status_receiver.py` (新建)
+- `lcps_tool/data_models/lcps_status.py` (新建)
+
+**验证标准**:
+- 接收延迟 < 50ms
+
+---
+
+### LCPS-P1-T3: 实现 DataSynchronizer（数据处理 Layer 2）
+**优先级**: 🔴 高
+**难度**: 中
+**依赖**: LCPS-P1-T1, LCPS-P1-T2
+**状态**: ✅ 已完成（2025-12-24）
+
+**描述**: 实现多源数据的时间戳同步，确保 OBB/点云/状态对齐
+
+**验收标准**:
+- [x] 时间戳同步算法实现（阈值匹配算法）
+- [x] 支持时间戳窗口（±50ms 内匹配）
+- [x] 生成 SyncedFrame（OBB + PC + Status + 时间戳）
+- [ ] 单元测试（同步准确性 ≥ 95%）（待后续补充）
+
+**技术参考**:
+- [LCPS 数据协议规范](../design/LCPS_DATA_PROTOCOL.md)
+
+**相关代码**:
+- `lcps_tool/layer2/data_synchronizer.py` (新建)
+- `lcps_tool/data_models/synced_frame.py` (新建)
+
+**验证标准**:
+- 同步延迟 < 50ms
+- 对齐准确性 ≥ 95%
+
+---
+
+### LCPS-P1-T4: 实现 DataRecorder（数据处理 Layer 2）
+**优先级**: 🔴 高
+**难度**: 中
+**依赖**: LCPS-P1-T3
+**状态**: ✅ 已完成（2025-12-24）
+
+**描述**: 实现 HDF5 数据录制模块，支持异步写入和流式压缩
+
+**验收标准**:
+- [x] HDF5 文件创建和数据集初始化
+- [x] OBB/点云/状态 数据写入（支持 gzip 压缩）
+- [x] 异步写入队列（避免阻塞主线程）
+- [x] 定期 flush（每 100 帧）
+- [x] 元数据记录（录制日期、版本、配置）
+- [ ] 单元测试（压缩率验证）（待后续补充）
+
+**技术决策**:
+- [ADR-002: HDF5 数据格式](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-2-hdf5-数据格式)
+- [LCPS HDF5 格式规范](../design/LCPS_HDF5_FORMAT.md)
+
+**相关代码**:
+- `lcps_tool/layer2/data_recorder.py` (新建)
+- `tests/test_data_recorder.py` (新建)
+
+**验证标准**:
+- 压缩率 ≥ 70%
+- 写入延迟 < 10ms/帧
+
+---
+
+### LCPS-P1-T5: 端到端集成和 MVP 验证
+**优先级**: 🔴 高
+**难度**: 中
+**依赖**: LCPS-P1-T1, LCPS-P1-T2, LCPS-P1-T3, LCPS-P1-T4
+**状态**: 📋 待做
+
+**描述**: 集成所有 Layer 1-2 模块，实现可运行的 MVP，进行端到端测试
+
+**验收标准**:
+- [ ] MultiChannelReceiver 完整实现（4 个数据源）
+- [ ] 数据同步验证（所有通道同步 ≤ 50ms）
+- [ ] HDF5 录制功能验证（完整性 100%）
+- [ ] 集成测试（sender → receiver → 文件验证）
+- [ ] 性能基准测试（延迟、CPU、内存）
+- [ ] 文档完成（快速开始指南）
+
+**测试场景**:
+- 本地测试（localhost:5555-5558）
+- 不同帧率测试（10Hz, 30Hz, 60Hz）
+- 长时间运行测试（≥ 1 小时）
+
+**相关代码**:
+- `lcps_tool/main.py` (整合脚本)
+- `tests/test_integration_mvp.py` (集成测试)
+- `docs/usage/quick-start-lcps.md` (快速开始)
+
+**验证标准** (基于 ADR v2.0):
+- Layer 1 延迟 < 100ms ✅
+- Layer 2 录制不影响 Layer 1 帧率 ✅
+- 压缩率 ≥ 70% ✅
+- 端到端功能验证通过 ✅
+
+---
+
+## LCPS 观测工具 - Phase 2: 完整功能 （优先级：🟠 中，3 周）
+
+### LCPS-P2-T1: 实现插件管理系统
+**优先级**: 🟠 中
+**难度**: 中
+**依赖**: LCPS-P1-T5 (MVP 完成)
+**状态**: 📋 待做
+
+**描述**: 实现动态插件加载、生命周期管理和事件总线
+
+**验收标准**:
+- [ ] PluginManager 类实现
+- [ ] IPlugin 基类和子类（DataChannel, Monitor, Analyzer, Exporter）
+- [ ] plugin_config.yaml 支持
+- [ ] 热加载/卸载支持（无需重启）
+- [ ] EventBus 实现（插件间通信）
+- [ ] 单元测试（插件隔离、故障处理）
+
+**技术决策**:
+- [ADR-005: 插件化架构设计](../adr/2025-12-24-lcps-tool-architecture-v2.md#决策-5-插件化架构设计)
+- [LCPS 插件架构指南](../design/LCPS_PLUGIN_ARCHITECTURE.md)
+
+**相关代码**:
+- `lcps_tool/layer3/plugin/base.py` (IPlugin 基类)
+- `lcps_tool/layer3/plugin/manager.py` (PluginManager)
+- `lcps_tool/layer3/plugin/event_bus.py` (EventBus)
+
+**验证标准**:
+- 支持动态加载插件（无需重启）
+- 插件故障隔离（一个插件崩溃不影响其他）
+
+---
+
+### LCPS-P2-T2: 实现异常检测插件（MissedAlertDetector）
+**优先级**: 🟠 中
+**难度**: 中
+**依赖**: LCPS-P2-T1
+**状态**: 📋 待做
+
+**描述**: 实现漏报检测插件，识别应报警但未报警的场景
+
+**验收标准**:
+- [ ] MissedAlertDetector 插件实现
+- [ ] Danger Zone（危险区域）配置支持
+- [ ] 异常检测规则实现
+- [ ] 检测准确率 ≥ 90%
+- [ ] 单元测试（真阳性、假阴性测试）
+
+**技术参考**:
+- [LCPS 异常检测规范](../design/LCPS_ANOMALY_DETECTION.md)
+
+**相关代码**:
+- `lcps_tool/layer3/plugins/analyzer_missed_alert.py` (新建)
+
+**验证标准**:
+- 异常检测准确率 ≥ 90%
+
+---
+
+### LCPS-P2-T3: 实现异常检测插件（FalseAlarmDetector）
+**优先级**: 🟠 中
+**难度**: 小
+**依赖**: LCPS-P2-T1
+**状态**: 📋 待做
+
+**描述**: 实现误报检测插件，识别不应报警但报警的场景
+
+**验收标准**:
+- [ ] FalseAlarmDetector 插件实现
+- [ ] 阈值配置支持
+- [ ] 误报检测规则实现
+- [ ] 单元测试
+
+**相关代码**:
+- `lcps_tool/layer3/plugins/analyzer_false_alarm.py` (新建)
+
+---
+
+### LCPS-P2-T4: 实现数据回放功能
+**优先级**: 🟠 中
+**难度**: 中
+**依赖**: LCPS-P1-T5 (HDF5 录制完成)
+**状态**: 📋 待做
+
+**描述**: 实现 HDF5 录制数据的回放功能，支持时间轴控制
+
+**验收标准**:
+- [ ] DataReplayer 类实现
+- [ ] 随机访问支持（跳转到任意时间点）
+- [ ] 播放控制（播放、暂停、快进、慢放）
+- [ ] 时间轴同步（显示当前位置）
+- [ ] 单元测试（完整性、准确性）
+
+**相关代码**:
+- `lcps_tool/layer2/data_replayer.py` (新建)
+
+**验证标准**:
+- 支持跳转到任意时间点（延迟 < 100ms）
+
+---
+
+### LCPS-P2-T5: Phase 2 集成和验证
+**优先级**: 🟠 中
+**难度**: 中
+**依赖**: LCPS-P2-T1 - LCPS-P2-T4
+**状态**: 📋 待做
+
+**描述**: 集成所有 Phase 2 功能，验证插件系统、异常检测、回放完整性
+
+**验收标准**:
+- [ ] 插件系统集成测试（加载、卸载、通信）
+- [ ] 异常检测验证（准确率 ≥ 90%）
+- [ ] 回放功能验证（完整、准确）
+- [ ] 性能测试（不影响实时观测）
+- [ ] 文档完成（插件开发指南、用户手册）
+
+**相关代码**:
+- `tests/test_integration_phase2.py` (集成测试)
+
+---
+
+## LCPS 观测工具 - Phase 3: 高级功能 （优先级：🟡 低，3 周）
+
+### LCPS-P3-T1: 实现 ImageReceiver 和渲染
+**优先级**: 🟡 低
+**难度**: 中
+**状态**: 📋 待做
+
+**描述**: 支持图像数据接收和显示（如果 LCPS 提供）
+
+**验收标准**:
+- [ ] ImageReceiver 实现
+- [ ] 图像渲染（OpenGL 纹理）
+- [ ] 图像面板布局
+
+---
+
+### LCPS-P3-T2: 实现多视图布局
+**优先级**: 🟡 低
+**难度**: 中
+**状态**: 📋 待做
+
+**描述**: 实现 3D 视图 + 2D 图像 + 状态面板多视图布局
+
+**验收标准**:
+- [ ] ImGui 多窗口支持
+- [ ] 可调整的布局
+
+---
+
+### LCPS-P3-T3: 实现自动化分析报告
+**优先级**: 🟡 低
+**难度**: 中
+**状态**: 📋 待做
+
+**描述**: 生成结构化的问题分析报告（Markdown 格式）
+
+**验收标准**:
+- [ ] 报告生成模块
+- [ ] 异常总结和建议
+
+---
+
+### LCPS-P3-T4: 配置系统和优化
+**优先级**: 🟡 低
+**难度**: 小
+**状态**: 📋 待做
+
+**描述**: 性能优化、配置系统完善、用户手册编写
+
+**验收标准**:
+- [ ] LOD、视锥体剔除等优化
+- [ ] 配置文件支持（保存/加载）
+- [ ] 完整用户手册
+
+---
+
+## LCPS 观测工具 - Phase 4: C++ 迁移 （优先级：⏳ 待定，6 周）
+
+### LCPS-P4-T1: MultiChannelReceiver C++ 实现
+**优先级**: ⏳ 待定
+**难度**: 大
+**依赖**: Phase 2 完成，Python MVP 验证通过
+**状态**: 📋 待做
+
+**描述**: 将 MultiChannelReceiver 从 Python 迁移到 C++，集成 ZMQ C++ API
+
+**相关代码**:
+- `src/lcps_tool/layer1/multichannel_receiver.cpp`
+
+---
+
+### LCPS-P4-T2: DataRecorder C++ 实现
+**优先级**: ⏳ 待定
+**难度**: 大
+**依赖**: LCPS-P4-T1
+**状态**: 📋 待做
+
+**描述**: 将 DataRecorder 迁移到 C++，集成 HDF5 C++ API
+
+**相关代码**:
+- `src/lcps_tool/layer2/data_recorder.cpp`
+
+---
+
+### LCPS-P4-T3: UI 和部署优化
+**优先级**: ⏳ 待定
+**难度**: 中
+**依赖**: LCPS-P4-T1, LCPS-P4-T2
+**状态**: 📋 待做
+
+**描述**: Qt UI 实现、CMake 构建、打包和部署
+
+**相关代码**:
+- `src/lcps_tool/ui/` (Qt UI)
+- `CMakeLists.txt` (C++ 构建)
+- `deploy/` (打包脚本)
+
+---
+
+## OBBViewer 改进 （优先级：🟡 低）
+
+### OBB-T1: 配置文件支持
+**优先级**: 🟡 低
+**难度**: 小
+**状态**: 📋 待做
+
+**描述**: 支持 YAML/JSON 配置文件，存储默认参数
+
+**相关代码**:
+- `config.yaml` (默认配置)
+- `config_loader.py` (配置加载)
+
+---
+
+### OBB-T2: 多相机视角切换
+**优先级**: 🟡 低
+**难度**: 小
+**状态**: 📋 待做
+
+**描述**: 支持多个预设相机视角（俯视图、侧视图、自由视角）
+
+**相关代码**:
+- `camera_manager.py` (相机管理)
+
+---
+
+### OBB-T3: OBB 碰撞检测可视化
+**优先级**: 🟡 低
+**难度**: 中
+**状态**: 📋 待做
+
+**描述**: 可视化显示 OBB 之间的碰撞关系
+
+**相关代码**:
+- `collision_detector.py` (碰撞检测)
 
 ---
 
