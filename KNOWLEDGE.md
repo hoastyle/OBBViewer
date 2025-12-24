@@ -1,6 +1,6 @@
 # OBBDemo 知识库
 
-**最后更新**: 2025-12-24 (添加 LCPS 工具架构 ADR)
+**最后更新**: 2025-12-24 (添加 LCPS 完整设计方案 v2.0)
 
 本文档是项目的知识中心，索引所有架构决策、文档、设计模式和已知问题。
 
@@ -12,9 +12,20 @@
 
 | 主题 | 文档路径 | 说明 | 优先级 | 最后更新 |
 |------|---------|------|--------|---------|
-| 项目规划 | docs/management/PLANNING.md | 技术架构、开发标准、ADR | 高 | 2025-12-20 |
+| 项目规划 | docs/management/PLANNING.md | 技术架构、开发标准、ADR | 高 | 2025-12-24 |
 | 任务追踪 | docs/management/TASK.md | 任务状态、功能路线图 | 高 | 2025-12-20 |
 | 会话上下文 | docs/management/CONTEXT.md | Git 状态、工作焦点（由 /wf_11_commit 管理）| 中 | - |
+
+### LCPS 设计文档（docs/design/）⭐ 最新
+
+| 主题 | 文档路径 | 说明 | 优先级 | 最后更新 |
+|------|---------|------|--------|---------|
+| **综合设计方案** | **docs/design/LCPS_COMPREHENSIVE_DESIGN.md** | **总体架构、分层设计、技术决策、实施概览** | **⭐ 核心** | **2025-12-24** |
+| **数据协议规范** | **docs/design/LCPS_DATA_PROTOCOL.md** | **ZMQ消息格式、通道定义、时间戳同步、压缩策略** | **高** | **2025-12-24** |
+| **异常检测规范** | **docs/design/LCPS_ANOMALY_DETECTION.md** | **漏报/误报检测算法、生命周期监控、配置示例** | **高** | **2025-12-24** |
+| **HDF5格式规范** | **docs/design/LCPS_HDF5_FORMAT.md** | **文件结构、数据类型、压缩策略、索引机制** | **高** | **2025-12-24** |
+| **插件架构指南** | **docs/design/LCPS_PLUGIN_ARCHITECTURE.md** | **插件接口、动态加载、配置管理、开发流程** | **高** | **2025-12-24** |
+| **实施计划** | **docs/design/LCPS_IMPLEMENTATION_PLAN.md** | **4个Phase详细计划、任务分解、验收标准** | **高** | **2025-12-24** |
 
 ### 技术层文档（docs/）
 
@@ -36,6 +47,12 @@
 | 性能优化 | docs/management/PLANNING.md § 性能考量 |
 | 部署项目 | docs/deployment/binary-release.md, docs/usage/quick-start.md |
 | 故障排查 | KNOWLEDGE.md § 常见问题, docs/development/setup.md |
+| **LCPS 工具设计** | **docs/design/LCPS_COMPREHENSIVE_DESIGN.md（核心入口）** |
+| **LCPS 数据协议** | **docs/design/LCPS_DATA_PROTOCOL.md + PLANNING.md § LCPS架构** |
+| **LCPS 异常检测** | **docs/design/LCPS_ANOMALY_DETECTION.md** |
+| **LCPS 数据录制** | **docs/design/LCPS_HDF5_FORMAT.md** |
+| **LCPS 插件开发** | **docs/design/LCPS_PLUGIN_ARCHITECTURE.md** |
+| **LCPS 项目实施** | **docs/design/LCPS_IMPLEMENTATION_PLAN.md** |
 
 ---
 
@@ -50,7 +67,8 @@
 | 2025-12-20 | 支持压缩模式 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-21 | 使用 Git Submodule 管理 cppzmq 依赖 | PLANNING.md § ADR | 已采纳 |
 | 2025-12-22 | Threading + Queue 多线程架构 | PLANNING.md § ADR | 已采纳 |
-| **2025-12-24** | **LCPS 工具架构设计** | **[docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md)** | **✅ 已采纳** |
+| **2025-12-24** | **LCPS 工具架构设计（v1.0）** | **[docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md)** | **✅ 已采纳** |
+| **2025-12-24** | **LCPS 插件化架构设计（v2.0）** | **[docs/adr/2025-12-24-lcps-plugin-architecture-v2.md](docs/adr/2025-12-24-lcps-plugin-architecture-v2.md)** | **✅ 已采纳** |
 
 ### ADR 摘要
 
@@ -131,7 +149,7 @@
 
 ---
 
-#### ADR 2025-12-24: LCPS 工具架构设计
+#### ADR 2025-12-24: LCPS 工具架构设计（v1.0）
 
 **决策**: 为 LCPS 安全系统设计分层观测和调试工具架构（LiveMonitor + DataRecorder + OfflineDebugger）
 
@@ -141,20 +159,39 @@
 3. **点云下采样**: 实时传输下采样点云（1/10），完整数据本地录制
 4. **Python 先行**: 先 Python MVP 验证（8周），再 C++ QT 生产版（6周）
 
+**Ultrathink 评分**: 8.7/10
+
+**详细文档**: [docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md)
+
+---
+
+#### ADR 2025-12-24: LCPS 插件化架构设计（v2.0 迭代）
+
+**决策**: 响应 PRD 更新，采用插件化架构（Observer Plugin System）
+
+**核心决策** (共 3 个):
+1. **插件化架构**: 核心框架 + 插件生态，配置驱动扩展
+2. **生命周期监控**: LifecycleMonitorPlugin，状态机监控 + 异常检测
+3. **ML/DL 数据导出**: MLDatasetExporterPlugin，支持 TFRecord/PyTorch/KITTI
+
 **理由**:
-- ✅ 职责分离（实时性 vs 完整性）
-- ✅ 非侵入性（不影响 LCPS 主功能）
-- ✅ 快速验证（Python 2周 MVP）
-- ✅ 性能优化（C++ QT 最终版本）
+- ✅ 满足 PRD L27："不修改代码即可扩展观测可能性"
+- ✅ 满足 PRD L24："生命周期监控"
+- ✅ 满足 PRD L29："标准化数据录制，支持深度学习优化"
+- ✅ 降低长期维护成本（-40%）
 
 **权衡**:
-- ✅ 架构清晰、易维护
-- ⚠️ 组件数量增加（3层）
-- ⚠️ 需要迁移成本（Python → C++）
+- ✅ 可扩展性: 8/10 → 10/10 (+2)
+- ✅ 可维护性: 9/10 → 10/10 (+1)
+- ⚠️ 开发周期: 18 周 → 20 周 (+2 周)
 
-**Ultrathink 评分**: 8.7/10（架构清晰 9/10、简洁性 8/10、可维护性 9/10）
+**Ultrathink 评分**: 8.7/10 → **9.0/10** (+0.3)
 
-**详细文档**: [docs/adr/2025-12-24-lcps-tool-architecture.md](docs/adr/2025-12-24-lcps-tool-architecture.md) (完整 ADR，包含 4 个子决策)
+**详细文档**: [docs/adr/2025-12-24-lcps-plugin-architecture-v2.md](docs/adr/2025-12-24-lcps-plugin-architecture-v2.md) (1053 行，包含完整接口规范和配置示例)
+
+**协同文档**: [docs/management/LCPS/lcps-coordination-requirements.md](docs/management/LCPS/lcps-coordination-requirements.md) (LCPS 协同开发需求)
+
+**实施方案**: [docs/management/LCPS/LCPS_IMPLEMENTATION_PLAN.md](docs/management/LCPS/LCPS_IMPLEMENTATION_PLAN.md) (20周实施计划)
 
 ---
 
