@@ -77,17 +77,21 @@ class OBBReceiver(BaseReceiver):
         """
         Parse normal mode data (JSON)
 
+        Supports two formats:
+        1. LCPS Protocol format (with header + payload)
+        2. Legacy format (direct OBB array)
+
         Args:
             message: Raw message bytes
 
         Returns:
-            Parsed JSON data dictionary
+            Parsed JSON data dictionary (with 'timestamp' and 'obbs' fields)
 
         Raises:
             RuntimeError: Decoding or parsing error
         """
         try:
-            data = json.loads(message.decode('utf-8'))
+            raw_data = json.loads(message.decode('utf-8'))
         except UnicodeDecodeError:
             raise RuntimeError(
                 "Failed to decode data as UTF-8. "
@@ -97,7 +101,35 @@ class OBBReceiver(BaseReceiver):
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Failed to parse JSON: {e}")
 
-        return data
+        # Handle LCPS Protocol format (header + payload)
+        if 'header' in raw_data and 'payload' in raw_data:
+            timestamp = raw_data['header']['timestamp']
+            payload = raw_data['payload']
+
+            # Extract OBBs from payload
+            if 'obbs' in payload:
+                obbs = payload['obbs']
+            else:
+                obbs = []
+
+            return {
+                'timestamp': timestamp,
+                'obbs': obbs,
+                'seq_id': raw_data['header'].get('seq_id', -1),
+                'source': raw_data['header'].get('source', 'unknown'),
+            }
+
+        # Handle legacy format (direct array or data field)
+        # This is for backward compatibility with old sender.cpp
+        if isinstance(raw_data, list):
+            # Direct array format
+            return {'obbs': raw_data}
+        elif 'data' in raw_data:
+            # Wrapped array format
+            return {'obbs': raw_data['data']}
+        else:
+            # Unknown format
+            return raw_data
 
     def _parse_compressed(self, message: bytes) -> Dict[str, Any]:
         """

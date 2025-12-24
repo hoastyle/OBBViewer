@@ -96,16 +96,41 @@ int main(int argc, char* argv[])
     while (true) {
         // auto obbs = generateRandomOBBs(100);
         auto obbs = generateRandomOBBs(1);
-        json j = json::object();
-        j["data"] = json::array();
 
+        // Get current timestamp (microsecond precision)
+        auto now = std::chrono::system_clock::now();
+        auto duration = now.time_since_epoch();
+        double timestamp = std::chrono::duration<double>(duration).count();
+
+        // Build message following LCPS Data Protocol
+        json j = json::object();
+
+        // Header
+        j["header"] = {
+            {"version", "1.0"},
+            {"timestamp", timestamp},
+            {"seq_id", index},
+            {"source", "sender_cpp"}
+        };
+
+        // Payload
+        json obbs_array = json::array();
         for (const auto& obb : obbs) {
-            j["data"].push_back({{"type", obb.type},
+            obbs_array.push_back({
+                {"type", obb.type},
                 {"position", obb.position},
                 {"rotation", obb.rotation},
                 {"size", obb.size},
-                {"collision_status", 0}});
+                {"collision_status", 0}
+            });
         }
+
+        j["payload"] = {
+            {"type", "obb_list"},
+            {"frame_id", "laser_frame"},
+            {"count", obbs.size()},
+            {"obbs", obbs_array}
+        };
 
         if (use_compression) {
             // Compressed mode
@@ -125,14 +150,13 @@ int main(int argc, char* argv[])
                       << " (original: " << json_str.size()
                       << " bytes, compressed: " << compressed.size() << " bytes)" << std::endl;
         } else {
-            // Normal mode (backward compatible)
-            json j_array = j["data"];  // Send array directly for backward compatibility
-            std::string msg = j_array.dump();
+            // Normal mode (LCPS protocol format)
+            std::string msg = j.dump();
             zmq::message_t zmq_msg(msg.size());
             memcpy(zmq_msg.data(), msg.data(), msg.size());
             publisher.send(zmq_msg, zmq::send_flags::dontwait);
 
-            std::cout << "Send OBB " << index << std::endl;
+            std::cout << "Send OBB " << index << " (timestamp: " << timestamp << ")" << std::endl;
         }
 
         ++index;

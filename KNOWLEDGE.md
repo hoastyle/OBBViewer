@@ -35,6 +35,7 @@
 | 数据格式 | docs/api/data-format.md | OBB 数据结构、ZMQ 消息格式 | 高 | 2025-12-20 |
 | 开发环境 | docs/development/setup.md | 环境配置、依赖安装、编译 | 高 | 2025-12-20 |
 | 快速开始 | docs/usage/quick-start.md | 安装、运行、基本使用 | 高 | 2025-12-20 |
+| **LCPS 工具快速开始** | **docs/usage/quick-start-lcps.md** | **LCPS 观测工具安装、配置、使用和故障排查** | **高** | **2025-12-24** |
 | ZMQ 通信指南 | docs/usage/sendOBB-recvOBB.md | 发送端/接收端通信、数据格式、模式匹配 | 高 | 2025-12-22 |
 | 部署指南 | docs/deployment/binary-release.md | PyInstaller 打包、二进制发布 | 中 | 2025-12-21 |
 
@@ -53,6 +54,7 @@
 | **LCPS 数据录制** | **docs/design/LCPS_HDF5_FORMAT.md** |
 | **LCPS 插件开发** | **docs/design/LCPS_PLUGIN_ARCHITECTURE.md** |
 | **LCPS 项目实施** | **docs/design/LCPS_IMPLEMENTATION_PLAN.md** |
+| **LCPS 工具使用** | **docs/usage/quick-start-lcps.md + docs/adr/2025-12-24-lcps-tool-architecture-v2.md** |
 
 ---
 
