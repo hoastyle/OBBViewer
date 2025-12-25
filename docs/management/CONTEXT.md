@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 **最后会话**: 2025-12-24
-**Git 基准**: commit f8de3c3
+**Git 基准**: commit 3128a54
 
 ## 📍 上下文指针 (Context Pointers)
 
@@ -11,9 +11,9 @@
 - 相关 ADR: KNOWLEDGE.md § ADR-001 开源成熟方案优先
 
 ### 会话状态
-- Git commits (本次会话): 1 commit (f8de3c3)
-- 修改文件数: 10 files
-- 主要变更领域: LCPS 工具 Layer 1+2 核心功能实现
+- Git commits (本次会话): 2 commits (f8de3c3, 3128a54)
+- 修改文件数: 21 files (累计)
+- 主要变更领域: LCPS 工具核心功能实现 + 文档架构重构
 
 ### 下次启动时
 - 推荐命令: /wf_03_prime
