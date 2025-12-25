@@ -80,6 +80,11 @@ class PerformanceMetrics:
         """记录丢帧"""
         self._frame_drops += 1
 
+    def get_current_fps(self) -> float:
+        """获取当前 FPS"""
+        fps_list = list(self._metrics['fps'])
+        return fps_list[-1] if fps_list else 0.0
+
     def get_summary(self) -> dict:
         """获取统计摘要"""
         fps_list = list(self._metrics['fps'])
@@ -164,6 +169,138 @@ class FrameDropWidget(HUDWidget):
         stats = metrics.get_summary()
         imgui_module.text(f"Frame Drop Rate: {stats['frame_drop_rate']:.1f}%")
         imgui_module.text(f"Total Drops: {metrics._frame_drops}")
+
+
+class RecorderWidget(HUDWidget):
+    """录制状态组件"""
+    def __init__(self, recorder_manager):
+        super().__init__()
+        self.recorder_manager = recorder_manager
+
+    def get_name(self) -> str:
+        return "Recorder"
+
+    def render(self, imgui_module, metrics):
+        status = self.recorder_manager.get_status()
+        if status["recording"]:
+            imgui_module.text_colored("Recording", 1.0, 0.0, 0.0)  # 红色
+            imgui_module.text(f"Duration: {status['duration']:.1f}s")
+            imgui_module.text(f"Frames: {status['frames']}")
+            imgui_module.text(f"File: {status['filename']}")
+        else:
+            imgui_module.text_colored("Not Recording", 0.5, 0.5, 0.5)  # 灰色
+
+
+class RecorderManager:
+    """录制管理器 - 支持会话录制和回放"""
+    def __init__(self):
+        self.recording = False
+        self.output_file = None
+        self.buffer = []  # 缓冲写入
+        self.lock = threading.Lock()
+        self.record_start_time = None
+        self.frame_count = 0
+        self.filename = None
+
+    def start_recording(self):
+        """开始录制"""
+        if self.recording:
+            print("⚠️ 已在录制中")
+            return
+
+        # 生成文件名
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.filename = f"recording_{timestamp}.jsonl"
+
+        try:
+            self.output_file = open(self.filename, 'w', encoding='utf-8')
+            self.recording = True
+            self.record_start_time = time.perf_counter()
+            self.frame_count = 0
+            print(f"🔴 开始录制: {self.filename}")
+        except Exception as e:
+            print(f"❌ 无法创建录制文件: {e}")
+            self.recording = False
+
+    def stop_recording(self):
+        """停止录制"""
+        if not self.recording:
+            print("⚠️ 未在录制中")
+            return
+
+        try:
+            self.flush()  # 刷新缓冲区
+            if self.output_file:
+                self.output_file.close()
+                self.output_file = None
+
+            duration = time.perf_counter() - self.record_start_time
+            print(f"⏹️  停止录制: {self.filename}")
+            print(f"   - 时长: {duration:.1f}s")
+            print(f"   - 帧数: {self.frame_count}")
+            print(f"   - 平均 FPS: {self.frame_count / duration:.1f}")
+
+        except Exception as e:
+            print(f"❌ 停止录制时出错: {e}")
+        finally:
+            self.recording = False
+            self.record_start_time = None
+
+    def record_data(self, data: dict, current_fps: float = 0.0):
+        """记录数据（非阻塞）"""
+        if not self.recording:
+            return
+
+        try:
+            timestamp = time.perf_counter() - self.record_start_time
+            record = {
+                "timestamp": timestamp,
+                "data": data,
+                "metadata": {
+                    "fps": current_fps,
+                    "frame": self.frame_count
+                }
+            }
+
+            with self.lock:
+                self.buffer.append(json.dumps(record, ensure_ascii=False))
+                self.frame_count += 1
+
+                # 每 100 条刷新一次
+                if len(self.buffer) >= 100:
+                    self.flush()
+
+        except Exception as e:
+            print(f"❌ 录制数据时出错: {e}")
+
+    def flush(self):
+        """刷新缓冲区到文件"""
+        if not self.output_file or not self.buffer:
+            return
+
+        try:
+            with self.lock:
+                for line in self.buffer:
+                    self.output_file.write(line + '\n')
+                self.output_file.flush()
+                self.buffer.clear()
+        except Exception as e:
+            print(f"❌ 刷新缓冲区时出错: {e}")
+
+    def get_status(self) -> dict:
+        """获取录制状态"""
+        if not self.recording:
+            return {"recording": False}
+
+        duration = time.perf_counter() - self.record_start_time
+        return {
+            "recording": True,
+            "filename": self.filename,
+            "duration": duration,
+            "frames": self.frame_count,
+            "fps": self.frame_count / duration if duration > 0 else 0.0
+        }
 
 
 class HUDManager:
@@ -421,7 +558,12 @@ class OBBReceiver:
             self.hud_manager.register_widget(BandwidthWidget())
             self.hud_manager.register_widget(FrameDropWidget())
 
+            # 初始化录制管理器
+            self.recorder_manager = RecorderManager()
+            self.hud_manager.register_widget(RecorderWidget(self.recorder_manager))
+
             print("✅ Performance HUD initialized (Press F1 to toggle)")
+            print("✅ Recorder Manager initialized (Press F2 to start/stop recording)")
 
     def receive_normal(self) -> Dict[str, Any]:
         """
@@ -517,6 +659,12 @@ class OBBReceiver:
                     if hasattr(self, 'hud_manager'):
                         self.hud_manager.toggle_visibility()
                         print(f"HUD {'enabled' if self.hud_manager.visible else 'disabled'}")
+                elif event.key == pygame.K_F2:  # F2 开始/停止录制
+                    if hasattr(self, 'recorder_manager'):
+                        if self.recorder_manager.recording:
+                            self.recorder_manager.stop_recording()
+                        else:
+                            self.recorder_manager.start_recording()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 左键
                     self.dragging = True
@@ -735,6 +883,11 @@ class OBBReceiver:
                     data = self.receive_normal()
 
                 if data:
+                    # 录制数据（如果启用）
+                    if hasattr(self, 'recorder_manager'):
+                        current_fps = self.metrics.get_current_fps() if hasattr(self, 'metrics') else 0.0
+                        self.recorder_manager.record_data(data, current_fps)
+
                     # 尝试放入队列（非阻塞）
                     try:
                         self.data_queue.put_nowait(data)
