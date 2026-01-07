@@ -31,7 +31,7 @@ OBBDemo 是一个基于 ZeroMQ 的实时 3D 数据可视化系统，用于演示
 
 ```
 ┌─────────────────┐         ZMQ PUB/SUB          ┌──────────────────┐
-│  Sender (C++)   │ ──────── tcp://5555 ────────>│  Receiver (Py)   │
+│  Sender (C++)   │ ──────── tcp://6555 ────────>│  Receiver (Py)   │
 │                 │                               │                  │
 │ - 生成 OBB 数据  │                               │ - 接收 OBB 数据   │
 │ - JSON 序列化   │                               │ - 解析数据       │
@@ -134,10 +134,10 @@ pygame.display.flip()
 ```
                     ZMQ PUB/SUB (多端口)
 LCPS System ──────────────────────────────┐
-  │ :5555 OBB (always)                    │
-  │ :5556 PointCloud (downsampled)        │
-  │ :5557 Status                          │
-  │ :5558 Image (optional)                │
+  │ :6555 OBB (always)                    │
+  │ :6556 PointCloud (downsampled)        │
+  │ :6557 Status                          │
+  │ :6558 Image (optional)                │
                                           │
                                           v
               ┌───────────────────────────────────┐
@@ -330,7 +330,7 @@ LCPS System ──────────────────────�
 uv sync
 
 # 运行 OBBViewer
-uv run python LCPSViewer.py -a localhost:5555 -m n
+uv run python LCPSViewer.py -a localhost:6555 -m n
 
 # 运行测试（待实现）
 uv run pytest tests/
@@ -423,10 +423,12 @@ class IPlugin(ABC):
 ### 配置管理
 
 **网络配置**:
-- 默认端口：5555 (OBB), 5556 (PointCloud), 5557 (Status), 5558 (Image)
+- 默认端口：6555 (OBB), 6556 (PointCloud), 6557 (Status), 6558 (Image)
+  - **注**: 使用 6555-6558 以匹配 LCPS Server 实际端口配置
+  - LCPS Server 使用 6555-6558 避免与其他服务冲突
 - 默认协议：TCP
 - ZMQ 模式：PUB/SUB
-- 地址格式：`IP:PORT`（如 `localhost:5555`）
+- 地址格式：`IP:PORT`（如 `localhost:6555`）
 
 **渲染配置**:
 - 默认分辨率：800x600

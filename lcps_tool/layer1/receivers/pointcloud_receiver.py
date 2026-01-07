@@ -51,7 +51,7 @@ class PointCloudReceiver(BaseReceiver):
         Initialize PointCloud receiver
 
         Args:
-            address: ZMQ address (e.g., "tcp://localhost:5556")
+            address: ZMQ address (e.g., "tcp://localhost:6556")
             voxel_size: Voxel grid size in meters (default: 0.1m as per ADR-003)
             enable_downsampling: Whether to apply downsampling
             queue_size: Maximum queue size (default: 10)

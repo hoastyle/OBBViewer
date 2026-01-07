@@ -43,7 +43,7 @@ class OBBReceiver(BaseReceiver):
         Initialize OBB receiver
 
         Args:
-            address: ZMQ address (e.g., "tcp://localhost:5555")
+            address: ZMQ address (e.g., "tcp://localhost:6555")
             use_compression: Whether to use compressed mode (zlib + BSON)
             queue_size: Maximum queue size (default: 10)
         """

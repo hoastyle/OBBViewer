@@ -32,7 +32,7 @@ class BaseReceiver(ABC):
         Initialize receiver
 
         Args:
-            address: ZMQ address (e.g., "tcp://localhost:5555")
+            address: ZMQ address (e.g., "tcp://localhost:6555")
             channel_name: Channel name for logging (e.g., "OBB", "PointCloud")
             queue_size: Maximum queue size (default: 10)
         """

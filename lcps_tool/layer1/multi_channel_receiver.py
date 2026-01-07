@@ -31,9 +31,9 @@ class MultiChannelReceiver:
         receiver = MultiChannelReceiver()
 
         # Configure channels
-        receiver.add_obb_channel("tcp://localhost:5555", use_compression=False)
-        receiver.add_pointcloud_channel("tcp://localhost:5556", voxel_size=0.1)
-        receiver.add_status_channel("tcp://localhost:5557")
+        receiver.add_obb_channel("tcp://localhost:6555", use_compression=False)
+        receiver.add_pointcloud_channel("tcp://localhost:6556", voxel_size=0.1)
+        receiver.add_status_channel("tcp://localhost:6557")
 
         # Start all channels
         receiver.start_all()
@@ -60,7 +60,7 @@ class MultiChannelReceiver:
         Add OBB data channel
 
         Args:
-            address: ZMQ address (e.g., "tcp://localhost:5555")
+            address: ZMQ address (e.g., "tcp://localhost:6555")
             use_compression: Whether to use compressed mode (zlib + BSON)
             queue_size: Maximum queue size
         """

@@ -1,12 +1,48 @@
 # CONTEXT.md - 项目完整状态快照
 
-**最后更新**: 2026-01-07 13:45:31 UTC+8
+**最后更新**: 2026-01-07 14:30:00 UTC+8
 **Git 基准**: commit `39fc9ea` - [fix] 增加record hud显示相关功能
 **完整 SHA**: `39fc9eaa06af19ee28dd11c555baa185830b9919`
+**最新变更**: 修改 ZMQ 端口配置以匹配 LCPS Server (6555-6558)
 
 ---
 
 ## 📍 当前项目状态总结
+
+### 🔧 最新修改 (2026-01-07)
+
+**ZMQ 端口配置更新** - 匹配 LCPS Server 实际端口:
+- **变更内容**: 将所有默认端口从 5555-5558 修改为 6555-6558
+- **变更原因**: LCPS Server 使用 6555-6558 避免与其他服务端口冲突
+- **影响范围**:
+  - 代码文件: `lcps_tool/layer1/` 所有 receiver 相关文件
+  - 文档文件: `PLANNING.md` 端口配置说明
+  - 示例代码: 所有文档中的示例代码
+
+**修改的文件清单**:
+```
+✅ docs/management/PLANNING.md (4 处修改)
+   - 网络配置说明: 5555-5558 → 6555-6558
+   - 架构图: tcp://5555 → tcp://6555
+   - LCPS System 端口: :5555-5558 → :6555-6558
+   - 运行示例: localhost:5555 → localhost:6555
+
+✅ lcps_tool/layer1/multi_channel_receiver.py (2 处修改)
+   - Usage 示例: localhost:5555-5557 → localhost:6555-6557
+   - add_obb_channel docstring: localhost:5555 → localhost:6555
+
+✅ lcps_tool/layer1/receivers/obb_receiver.py
+   - OBBReceiver.__init__ docstring: localhost:5555 → localhost:6555
+
+✅ lcps_tool/layer1/receivers/pointcloud_receiver.py
+   - PointCloudReceiver.__init__ docstring: localhost:5556 → localhost:6556
+
+✅ lcps_tool/layer1/receivers/status_receiver.py
+   - StatusReceiver.__init__ docstring: localhost:5557 → localhost:6557
+
+✅ lcps_tool/layer1/receivers/base_receiver.py
+   - BaseReceiver.__init__ docstring: localhost:5555 → localhost:6555
+```
 
 ### 🎯 项目核心指标
 | 指标 | 状态 | 备注 |

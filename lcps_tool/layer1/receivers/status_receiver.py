@@ -65,7 +65,7 @@ class StatusReceiver(BaseReceiver):
         Initialize Status receiver
 
         Args:
-            address: ZMQ address (e.g., "tcp://localhost:5557")
+            address: ZMQ address (e.g., "tcp://localhost:6557")
             queue_size: Maximum queue size (default: 10)
         """
         super().__init__(address, "Status", queue_size)
